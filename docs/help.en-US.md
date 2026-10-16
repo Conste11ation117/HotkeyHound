@@ -1,0 +1,187 @@
+﻿# HotkeyHound Help (English)
+
+HotkeyHound is a Windows global-hotkey conflict troubleshooting tool. It helps you see **which hotkeys are
+occupied, who occupies them, why a key you press does nothing, and which keys are free to use.**
+
+It only reads and probes: it never changes your configuration, never writes the registry, and never ends any process.
+
+---
+
+## 1. What problem this solves
+
+HotkeyHound addresses the everyday annoyances below:
+
+- You want to assign a global hotkey but the app says "already in use", and you cannot tell who took it.
+- A key press does nothing — is it grabbed by some other software, or swallowed by a hook?
+- After a new PC or a new install, a batch of old shortcuts behave differently and you want to find the culprit.
+- You want to know whether a particular combination (e.g. `Ctrl+Alt+F13`) is free and usable.
+
+It is built from four engines, each answering a different part of the question.
+
+---
+
+## 2. The four engines
+
+### Engine A — occupancy scan (read-only, no admin needed)
+
+**What it does**: for every "modifier combination x key" (~1650 combinations) it calls the Win32
+`RegisterHotKey`. On success it immediately calls `UnregisterHotKey` and records the combination as **free**;
+on failure with error 1409 (`ERROR_HOTKEY_ALREADY_REGISTERED`) it records it as **occupied**.
+
+**How to use**: click Start scan on the "Scan overview" page, or from the command line:
+
+```
+HotkeyHound.exe --scan --report my-report.html
+```
+
+**Risk**: essentially none. It changes no settings, writes no registry, and undoes every registration instantly.
+
+### Engine B — key attribution (installs a hook; administrator recommended)
+
+**What it does**: it installs a global message hook (`WH_GETMESSAGE`, implemented by a native DLL) that
+intercepts `WM_HOTKEY` messages. When you press a global hotkey, the process that owns it receives the
+message, and the hook reports back "owner PID + combination" — so you learn **whose hotkey it actually is**.
+
+**How to use**: click Start listening on the "Key attribution" page, then press the hotkey you want to
+investigate; or from the command line:
+
+```
+HotkeyHound.exe --listen --seconds 30
+```
+
+**Risk**: this one installs a global hook and injects the native DLL into every process in the session.
+Therefore:
+
+- It is installed **only when you explicitly click Start listening**, and unloaded the moment you click Stop;
+- Loading the UI installs **no** hook;
+- Run as administrator where possible, otherwise elevated processes (e.g. PowerToys run as admin) are invisible.
+
+### Engine C — hook interception detection (installs a hook)
+
+**What it does**: it installs a low-level keyboard hook `WH_KEYBOARD_LL` to observe whether keys reach the
+system. Combined with engine A's occupancy table and engine B's attribution reports, it produces one of four
+verdicts:
+
+| Verdict | Meaning |
+|---|---|
+| Delivered normally | The key reached the system and a clear attribution report arrived |
+| Likely intercepted by a hook | The key reached the system but the owner did not get the command — a hook grabbed it |
+| Swallowed by an upstream hook | This program's hook never saw the key, so an upstream hook swallowed it |
+| Not a global hotkey | Seen, but engine A does not list it as occupied — it is handled only by the current window |
+
+**How to use**: on the "Hook detection" page, enter a combination and click Arm (install hook) (**only then is
+the hook installed**), immediately press the key, and read the verdict. When the verdict is "swallowed", use
+the comparison workflow on the right to record, manually exit suspect software, and compare.
+
+**Risk**: it also installs a hook. This page **only observes; it never swallows or alters keys, and never ends
+or pauses any process.**
+
+### Engine D — config aggregation (read-only, no admin needed)
+
+**What it does**: it parses hotkey declarations from the config files of known software (PowerToys, Everything,
+OBS, NVIDIA ShadowPlay, Wallpaper Engine, MSI Afterburner, etc.), diffs them against engine A's measurements,
+and produces a "truth table".
+
+**How to use**: it runs automatically alongside `--scan` / "Start scan"; results appear on the "Config truth
+table" page and in the report.
+
+**Risk**: none. All reads are read-only; broken or missing config files are skipped.
+
+---
+
+## 3. Why "the scan says free" may still be occupied
+
+This is the most commonly misunderstood point. Engine A can only see hotkeys registered through
+`RegisterHotKey`; a whole class of hotkeys does **not** go through it:
+
+- **Keyboard-hook hotkeys are invisible.** PowerToys Keyboard Manager, AutoHotkey, IMEs and some game tools
+  implement hotkeys with low-level keyboard hooks. They do not call `RegisterHotKey`, so engine A reports the
+  key as "free" — yet when pressed, they grab it first.
+- **Only the current session is visible.** `RegisterHotKey` is session/window-station scoped; hotkeys
+  registered in other login sessions cannot be probed here.
+- **"Registration failed" is not the same as "software occupancy".** A few combinations return errors other
+  than 1409 (system reservations or special limits); the report lists the error code.
+
+In short: engine A saying "free" only means "nobody registered it via RegisterHotKey". To confirm whether
+anything actually responds when pressed, use engine B to listen and engine C to detect hooks.
+
+---
+
+## 4. Using engine B to find "keys that do nothing when pressed"
+
+Suppose a key does nothing and you want to know what handled it:
+
+1. Open the "Key attribution" page (or `--listen`) and click Start listening.
+2. Press the key and watch for an attribution record.
+3. Two cases:
+   - **A record appears**: it names the process that owns the key. That software grabbed it.
+   - **No record**: either it is not a global hotkey (only the current window handles it), or an upstream hook
+     swallowed it. In that case, use engine C (the "Hook detection" page) to dig further.
+
+Tip: combine `--listen` with engine C's comparison workflow — record "now", exit one suspect software, test
+again, and compare the two results to pin down the culprit.
+
+---
+
+## 5. Permissions and integrity
+
+- **Administrator (UAC)**: when not run as administrator, attribution for processes running as administrator
+  (e.g. PowerToys) is invisible. The top banner and the "Scan overview" page both offer a "Relaunch as
+  administrator" button; from the command line use `--elevate` to relaunch elevated (original command-line
+  arguments are preserved). If the user clicks No in UAC, the program recognizes it as "cancelled" and returns
+  normally — it does not crash.
+- **Low integrity (Low IL)**: if the exe sits in a directory carrying the `Mandatory Label\Low` label (e.g.
+  some sync-drive workspaces), the process runs at low integrity. Consequences: writes to `%TEMP%` /
+  `%LOCALAPPDATA%` are denied, and **UIPI blocks hook injection**, so engines B/C are largely useless.
+  **Copy the exe to an ordinary directory (e.g. `C:\Tools\`) and run it from there.**
+- **UIPI (User Interface Privilege Isolation)**: a low-integrity or non-elevated process cannot inject hooks
+  into higher-integrity processes. This is a Windows security mechanism, not a bug in this tool.
+
+---
+
+## 6. Known limitations
+
+- **32-bit processes are invisible**: this program is 64-bit and the injected hook DLL is x64, so attribution
+  for running 32-bit processes is not covered.
+- **Hook-based hotkeys do not go through WM_HOTKEY**: hotkeys implemented with keyboard hooks (Keyboard
+  Manager, IMEs, AutoHotkey) neither appear in engine A's occupancy table nor trigger engine B's reports.
+- **Only the current session is covered**: hotkeys in other login sessions are invisible.
+- **Some config encodings are unverified**: the hotkey encodings of MSI Afterburner and Everything need a
+  manual check.
+- **Engines B/C install hooks**: this is by design, and only on explicit action.
+
+---
+
+## 7. Troubleshooting
+
+**Q: The scan finds nothing / the numbers look too low?**
+A: Make sure another program is not registering a mass of hotkeys at the same time; re-run from an ordinary
+directory (low integrity affects both writing and probing).
+
+**Q: "Start listening" errors out, or no process is ever visible?**
+A: Most likely low integrity (copy the exe to an ordinary directory) or not being an administrator (use
+"Relaunch as administrator" / `--elevate`).
+
+**Q: The report cannot be written / access denied?**
+A: Point the output path at a writable directory (e.g. the program's own folder). A low-integrity process
+cannot write to `%TEMP%` or `%LOCALAPPDATA%`.
+
+**Q: A key is free in engine A, but pressing it still does nothing?**
+A: It is likely taken by a hook-based hotkey. Use engine B to listen and engine C to detect hooks.
+
+**Q: How do I switch the UI to Chinese?**
+A: Add `--lang zh` on the command line, or switch the language on the "Report & about" page / in the help
+window (restart the program for it to take effect).
+
+---
+
+## 8. Uninstall / cleanup
+
+HotkeyHound is a portable single-file program with **no installer and no registry writes**:
+
+- Just delete `HotkeyHound.exe`.
+- The program extracts a native DLL used by engine B (`HotkeyHound.Hook.dll`) and `settings.ini` under
+  `%LOCALAPPDATA%\HotkeyHound\` (or next to the exe). Deleting that directory is enough.
+- Engine B's DLL is injected into processes in the current session; those injections **disappear naturally
+  when the processes restart**, and **rebooting clears them completely**. When you stop listening, this program
+  also calls `UnhookWindowsHookEx` to unload the hook.

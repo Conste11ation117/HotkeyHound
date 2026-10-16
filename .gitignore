@@ -1,0 +1,23 @@
+# 构建产物
+build/
+dist/
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+
+# 报告与日志（每次扫描都会生成，不进货）
+report-*.html
+*.log
+hs-*.txt
+
+# Visual Studio / 编辑器
+.vs/
+*.user
+*.suo
+*.sln.docstates
+
+# 系统
+Thumbs.db
+desktop.ini

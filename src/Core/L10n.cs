@@ -1,0 +1,1150 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
+
+namespace HotkeyHound.Core
+{
+    /// <summary>
+    /// 极简国际化（i18n）。两套字符串表：zh-CN 与 en-US，全部面向用户的文案都集中在这里，
+    /// 代码里不再散落中文字面量。
+    ///
+    /// 语言选择优先级：命令行 --lang > 配置（%LOCALAPPDATA%\HotkeyHound\settings.ini）
+    /// > CultureInfo.CurrentUICulture（zh* → 中文，其余 → English）。
+    /// </summary>
+    public static class L10n
+    {
+        public const string Chinese = "zh-CN";
+        public const string English = "en-US";
+
+        private static readonly Dictionary<string, string> Zh = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> En = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        private static string _current = Chinese;
+
+        public static string Current { get { return _current; } }
+        public static bool IsEnglish { get { return _current != Chinese; } }
+
+        /// <summary>语言显示名（用于界面语言下拉）。</summary>
+        public static string LangDisplay(string lang)
+        {
+            return lang == Chinese ? "中文（简体）" : "English (en-US)";
+        }
+
+        public static string CurrentDisplay { get { return LangDisplay(_current); } }
+
+        /// <summary>当前语言下取字符串；找不到时依次回退到中文、英文、键名本身。</summary>
+        public static string T(string key)
+        {
+            if (key == null) return "";
+            string v;
+            if (IsEnglish && En.TryGetValue(key, out v)) return v;
+            if (Zh.TryGetValue(key, out v)) return v;
+            if (En.TryGetValue(key, out v)) return v;
+            return key;
+        }
+
+        /// <summary>T(key) 后做 string.Format。</summary>
+        public static string F(string key, params object[] args)
+        {
+            string fmt = T(key);
+            try { return string.Format(fmt, args); }
+            catch (Exception) { return fmt; }
+        }
+
+        // ------------------------------------------------------------------ 语言选择
+
+        /// <summary>按优先级决定当前语言。langArg 来自命令行 <c>--lang</c>（可为 null）。</summary>
+        public static void Initialize(string langArg)
+        {
+            string lang = Normalize(langArg);
+            if (lang == null) lang = ReadConfiguredLanguage();
+            if (lang == null) lang = FromCulture(CultureInfo.CurrentUICulture);
+            _current = lang;
+        }
+
+        /// <summary>切换语言并持久化（界面语言下拉用）。返回是否成功写入配置。</summary>
+        public static bool SetLanguage(string lang)
+        {
+            string normalized = Normalize(lang);
+            if (normalized == null) return false;
+            bool changed = normalized != _current;
+            _current = normalized;
+            WriteConfiguredLanguage(normalized);
+            return changed;
+        }
+
+        public static string Normalize(string lang)
+        {
+            if (string.IsNullOrEmpty(lang)) return null;
+            string l = lang.Trim().ToLowerInvariant();
+            if (l.Length == 0) return null;
+            if (l == "zh" || l.StartsWith("zh-")) return Chinese;
+            if (l == "en" || l.StartsWith("en-")) return English;
+            return null;
+        }
+
+        private static string FromCulture(CultureInfo culture)
+        {
+            try
+            {
+                string name = culture == null ? null : culture.Name;
+                if (!string.IsNullOrEmpty(name) && name.ToLowerInvariant().StartsWith("zh")) return Chinese;
+            }
+            catch (Exception) { }
+            return English;
+        }
+
+        // ------------------------------------------------------------------ 配置读写
+
+        public static string SettingsPath()
+        {
+            try
+            {
+                string la = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (!string.IsNullOrEmpty(la)) return Path.Combine(la, "HotkeyHound", "settings.ini");
+            }
+            catch (Exception) { }
+            return null;
+        }
+
+        private static string ReadConfiguredLanguage()
+        {
+            try
+            {
+                string path = SettingsPath();
+                if (path == null || !File.Exists(path)) return null;
+                foreach (string raw in File.ReadAllLines(path))
+                {
+                    string line = raw == null ? "" : raw.Trim();
+                    if (line.Length == 0 || line.StartsWith("#") || line.StartsWith(";")) continue;
+                    int eq = line.IndexOf('=');
+                    if (eq <= 0) continue;
+                    string key = line.Substring(0, eq).Trim().ToLowerInvariant();
+                    if (key != "lang" && key != "language") continue;
+                    return Normalize(line.Substring(eq + 1).Trim());
+                }
+            }
+            catch (Exception) { }
+            return null;
+        }
+
+        private static void WriteConfiguredLanguage(string lang)
+        {
+            try
+            {
+                string path = SettingsPath();
+                if (path == null) return;
+                string dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                File.WriteAllText(path, "lang=" + lang + "\r\n", new UTF8Encoding(true));
+            }
+            catch (Exception) { }
+        }
+
+        // ------------------------------------------------------------------ 字符串表
+
+        static L10n()
+        {
+            BuildApp();
+            BuildIntegrity();
+            BuildCli();
+            BuildTruth();
+            BuildVerdict();
+            BuildScanLog();
+            BuildReport();
+            BuildUi();
+            BuildHelp();
+            BuildTerms();
+        }
+
+        private static void A(string key, string zh, string en)
+        {
+            Zh[key] = zh;
+            En[key] = en;
+        }
+
+        private static void BuildApp()
+        {
+            A("app.title", "HotkeyHound", "HotkeyHound");
+            A("app.description", "全局快捷键冲突排查工具", "Global hotkey conflict troubleshooting tool");
+            A("app.versionNote",
+              "四个引擎全部可用：A 占用扫描、B 按键归属、C 钩子窃取检测、D 配置聚合。"
+              + "A/D 只读、不需要管理员；B/C 需要安装钩子（仅在显式点「开始监听」/「布防」时），"
+              + "管理员权限下覆盖最全，并已在真机验证。",
+              "All four engines are available: A occupancy scan, B key attribution, "
+              + "C hook interception detection, D config aggregation. "
+              + "A/D are read-only and need no administrator rights; B/C install hooks "
+              + "(only when you explicitly click Listen / Arm), cover the most as administrator, "
+              + "and have been verified on a real machine.");
+            A("common.unknown", "未知", "Unknown");
+            A("common.yes", "是", "Yes");
+            A("common.no", "否", "No");
+            A("common.none", "（无）", "(none)");
+        }
+
+        private static void BuildIntegrity()
+        {
+            A("il.untrusted", "低完整性（Untrusted）", "Low integrity (Untrusted)");
+            A("il.low", "低完整性（Low）", "Low integrity (Low)");
+            A("il.medium", "中完整性（Medium，正常）", "Medium integrity (Medium, normal)");
+            A("il.high", "高完整性（High，已提权）", "High integrity (High, elevated)");
+            A("il.system", "系统完整性（System）", "System integrity (System)");
+            A("il.unknown", "完整性未知", "Integrity unknown");
+            A("il.warn.low",
+              "当前程序以{0}运行（exe 位于带 Low 标签的目录）。UIPI 会拦住对普通完整性进程的钩子注入，"
+              + "引擎 B/C 基本失效，写 %TEMP%、%LOCALAPPDATA% 也会被拒绝。"
+              + "请把 HotkeyHound.exe 复制到普通目录（例如 C:\\Tools\\）后再运行。",
+              "This program is running at {0} (the exe lives in a directory carrying the Low label). "
+              + "UIPI blocks hook injection into normal-integrity processes, so engines B/C are largely "
+              + "useless, and writes to %TEMP% / %LOCALAPPDATA% are denied. "
+              + "Copy HotkeyHound.exe to an ordinary directory (e.g. C:\\Tools\\) and run it from there.");
+            A("il.warn.notAdmin",
+              "当前不是管理员。以管理员身份运行才能看到 PowerToys 这类提权进程的归属。",
+              "Not running as administrator. Run as administrator to see attribution for elevated "
+              + "processes such as PowerToys.");
+        }
+
+        private static void BuildCli()
+        {
+            A("cli.usage.title", "用法：", "Usage:");
+            A("cli.except", "未处理的异常：{0}", "Unhandled exception: {0}");
+            A("cli.parseFailed", "命令行解析失败：{0}", "Command-line parsing failed: {0}");
+
+            A("cli.scan.start", "正在运行引擎 A（占用扫描）+ 引擎 D（配置聚合）…",
+              "Running engine A (occupancy scan) + engine D (config aggregation)…");
+            A("cli.scan.failed", "扫描失败：{0}", "Scan failed: {0}");
+            A("cli.scan.reportWritten", "报告已写入：{0}", "Report written: {0}");
+            A("cli.scan.reportWriteFailed", "报告写入失败：{0}", "Failed to write report: {0}");
+            A("cli.scan.defaultDirFailed", "默认目录写入失败：{0}", "Default directory write failed: {0}");
+            A("cli.scan.jsonWritten", "JSON 已写入：{0}", "JSON written: {0}");
+            A("cli.scan.jsonWriteFailed", "JSON 写入失败：{0}", "Failed to write JSON: {0}");
+            A("cli.scan.summary", "占用 {0} / 空闲 {1} / 声明 {2} / 真相表 {3} 行",
+              "Occupied {0} / free {1} / declared {2} / truth rows {3}");
+            A("cli.writable.hint",
+              "提示：请把输出路径改到可写目录（例如程序所在目录）。"
+              + "若从带「Mandatory Label\\Low 完整性」标签的目录（如 iCloud Drive 下的工作区）启动本程序，"
+              + "进程会以低完整性运行，%TEMP%、%LOCALAPPDATA%、%USERPROFILE% 等目录都会写入失败。{0}",
+              "Hint: choose a writable output directory (e.g. the program's own folder). "
+              + "If this program was launched from a directory carrying the "
+              + "\"Mandatory Label\\Low Integrity\" label (such as the workspace under iCloud Drive), "
+              + "the process runs at low integrity and writes to %TEMP%, %LOCALAPPDATA%, "
+              + "%USERPROFILE% and similar will fail.{0}");
+            A("cli.writable.target", "本次目标目录：{0}", " Target directory: {0}");
+
+            A("cli.listen.title", "{0} {1} —— 按键归属监听（引擎 B）",
+              "{0} {1} — key attribution listener (engine B)");
+            A("cli.listen.meta", "时长：{0} 秒　完整性：{1}　管理员：{2}",
+              "Duration: {0} s  Integrity: {1}  Admin: {2}");
+            A("cli.listen.note", "注意：{0}", "Note: {0}");
+            A("cli.listen.startFailed", "启动失败：{0}", "Start failed: {0}");
+            A("cli.listen.installed",
+              "钩子已安装（句柄 0x{0}），请按下热键…",
+              "Hook installed (handle 0x{0}); press your hotkey now…");
+            A("cli.listen.hint",
+              "提示：用键盘钩子实现的热键（键盘管理器、输入法、AHK）不会经过 WM_HOTKEY，看不到。",
+              "Hint: hotkeys implemented with keyboard hooks (Keyboard Manager, IME, AHK) do not go "
+              + "through WM_HOTKEY and cannot be seen here.");
+            A("cli.listen.nonAdminHint",
+              "注意：当前不是管理员，看不到提权进程的归属。加 --elevate 可提权重启。",
+              "Note: not running as administrator, so elevated processes are invisible. "
+              + "Add --elevate to relaunch elevated.");
+            A("cli.listen.total", "共收到 {0} 条归属记录。", "Received {0} attribution record(s).");
+            A("cli.listen.empty1",
+              "一条都没有。可能原因：没有按下任何全局热键；或当前不是管理员，看不到提权进程；",
+              "None at all. Possible reasons: no global hotkey was pressed; or you are not an "
+              + "administrator so elevated processes are invisible;");
+            A("cli.listen.empty2",
+              "或程序以低完整性运行，钩子注入被 UIPI 拦住了。",
+              "or the program runs at low integrity and UIPI blocked hook injection.");
+            A("cli.listen.unhooked",
+              "钩子已卸载（UnhookWindowsHookEx 已在引擎停止时调用）。",
+              "Hook unloaded (UnhookWindowsHookEx was called when the engine stopped).");
+
+            A("cli.elevate.already", "当前已经是管理员，无需提权。",
+              "Already running as administrator; no elevation needed.");
+            A("cli.elevate.requesting", "正在请求以管理员身份重启…", "Requesting restart as administrator…");
+            A("cli.elevate.ok",
+              "已请求提权，新的管理员进程即将启动，本进程退出。",
+              "Elevation requested; a new administrator process will start and this one will exit.");
+            A("cli.elevate.cancelled",
+              "提权被取消（用户点了「否」），未做任何改动。",
+              "Elevation cancelled (the user chose No); nothing was changed.");
+            A("cli.elevate.failed", "提权失败：{0}", "Elevation failed: {0}");
+
+            A("cli.lang.bad", "无法识别的语言：{0}（可用：zh、en）", "Unrecognized language: {0} (use: zh, en)");
+            A("cli.selftest.failed", "自测执行失败：{0}", "Self-test execution failed: {0}");
+            A("cli.listen.pathPrefix", "      路径：{0}", "      Path: {0}");
+
+            A("cli.help.gui", "  HotkeyHound.exe                                启动图形界面",
+              "  HotkeyHound.exe                                Launch the GUI");
+            A("cli.help.scan", "  HotkeyHound.exe --scan [--report <路径>] [--json <路径>]",
+              "  HotkeyHound.exe --scan [--report <path>] [--json <path>]");
+            A("cli.help.scanDesc", "                                                跑引擎 A + D，生成 HTML 报告",
+              "                                                Run engines A + D, generate an HTML report");
+            A("cli.help.listen", "  HotkeyHound.exe --listen [--seconds N]         按键归属监听（引擎 B），N 默认 30 秒",
+              "  HotkeyHound.exe --listen [--seconds N]         Key attribution listener (engine B), N defaults to 30");
+            A("cli.help.listenDesc", "                                                 需要管理员才有完整覆盖；用 --elevate 可提权重启",
+              "                                                 Administrator gives full coverage; --elevate relaunches elevated");
+            A("cli.help.selftest", "  HotkeyHound.exe --selftest [--no-hooks]        自测，全部通过退出码 0",
+              "  HotkeyHound.exe --selftest [--no-hooks]        Self-test; exit code 0 when all pass");
+            A("cli.help.selftestDesc", "                                                 --no-hooks 跳过会安装钩子的 T6/T7",
+              "                                                 --no-hooks skips T6/T7, which install hooks");
+            A("cli.help.elevate", "  HotkeyHound.exe --elevate                      以管理员身份重启并继续（保留原参数）",
+              "  HotkeyHound.exe --elevate                      Relaunch as administrator and continue (keeps args)");
+            A("cli.help.elevateDesc", "                                                 在 UAC 提示里点「否」会安全取消，不会崩溃",
+              "                                                 Choosing No in the UAC prompt cancels safely, no crash");
+            A("cli.help.lang", "  HotkeyHound.exe --lang zh|en                   指定界面/报告语言（默认跟随系统区域）",
+              "  HotkeyHound.exe --lang zh|en                   Set UI/report language (default follows the system locale)");
+            A("cli.help.helper", "  HotkeyHound.exe --helper                       （内部用）辅助进程",
+              "  HotkeyHound.exe --helper                       (internal) helper process");
+            A("cli.help.screenshot", "  HotkeyHound.exe --screenshot <目录>            （文档用）渲染五个页面为 PNG 后退出，不装钩子",
+              "  HotkeyHound.exe --screenshot <dir>             (docs) render the five pages to PNG, then exit; installs no hooks");
+            A("cli.help.help", "  HotkeyHound.exe --help                         显示本帮助",
+              "  HotkeyHound.exe --help                         Show this help");
+            A("cli.help.notesTitle", "说明：", "Notes:");
+            A("cli.help.note.report", "  --report 缺省时在当前目录生成 report-yyyyMMdd-HHmmss.html",
+              "  Without --report, report-yyyyMMdd-HHmmss.html is written to the current directory");
+            A("cli.help.note.readonly", "  报告与扫描过程全部只读，不会修改任何配置或注册表",
+              "  The report and the scan are fully read-only; no config or registry is modified");
+            A("cli.help.note.hook", "  钩子类热键（键盘管理器、输入法、AutoHotkey）不经过 RegisterHotKey，扫描看不到；"
+              + "要看清归属请用 --listen 或图形界面的「按键归属」页，并尽量以管理员身份运行。",
+              "  Hook-based hotkeys (Keyboard Manager, IME, AutoHotkey) do not use RegisterHotKey and are invisible "
+              + "to the scan; to see attribution use --listen or the Attribution page, ideally as administrator.");
+        }
+
+        private static void BuildTruth()
+        {
+            A("truth.kind.matched", "声明与实测一致", "Declared and measured match");
+            A("truth.kind.declaredOnly", "有声明但未注册成功", "Declared but not registered");
+            A("truth.kind.unowned", "已占用但无声明", "Occupied but undeclared");
+            A("truth.kind.free", "空闲且无声明", "Free and undeclared");
+
+            A("truth.explain.matched",
+              "配置文件里有声明，且系统里确实注册了这个热键——归属明确，冲突风险最低。",
+              "There is a declaration in a config file and the hotkey is actually registered in the "
+              + "system — attribution is clear and conflict risk is lowest.");
+            A("truth.explain.declaredOnly",
+              "配置文件里有声明，但系统里注册不上（说明当前是空闲的）。常见原因：该软件用键盘钩子而不是 "
+              + "RegisterHotKey 实现，或者它当前没有运行。",
+              "There is a declaration in a config file but it cannot be registered in the system "
+              + "(so it is currently free). Common reasons: the software implements it with a keyboard "
+              + "hook instead of RegisterHotKey, or it is not running now.");
+            A("truth.explain.unowned",
+              "系统里已被占用，但所有可读的配置文件里都没有对应声明。可能是配置不可读的软件（IM、输入法、"
+              + "驱动工具），也可能是别的用户会话注册的。",
+              "It is occupied in the system but no readable config file declares it. It may come from "
+              + "software whose config is unreadable (IM, IME, driver tools), or from another user session.");
+            A("truth.explain.free",
+              "系统里既没注册、也没有任何软件声明。这些键位是自由的，可用来挑一个不冲突的热键。",
+              "Neither registered in the system nor declared by any software. These keys are free and can "
+              + "be used to pick a conflict-free hotkey.");
+
+            A("truth.evidence.both", "两者", "Both");
+            A("truth.evidence.config", "配置文件", "Config file");
+            A("truth.evidence.measured", "实测注册", "Measured");
+
+            A("truth.note.matched",
+              "配置文件声明与系统注册都存在，归属明确。",
+              "Both the config declaration and the system registration exist; attribution is clear.");
+            A("truth.note.declaredOnly",
+              "声明存在但系统未注册：该软件可能用键盘钩子实现该热键（不经过 RegisterHotKey），"
+              + "或当前没有运行。",
+              "Declared but not registered in the system: the software may implement this hotkey with a "
+              + "keyboard hook (not via RegisterHotKey), or it is not running now.");
+            A("truth.note.declaredOnly.defaultSuffix", "（该项可能是默认值）", " (this may be a default value)");
+            A("truth.note.unowned",
+              "没有找到任何可读配置的声明；可能是 IM/输入法等配置不可读的软件注册的。",
+              "No declaration was found in any readable config; it may have been registered by software "
+              + "whose config is unreadable (IM/IME).");
+            A("truth.note.unowned.errSuffix",
+              "注册失败错误码 {0}（不是 1409，属于系统保留或特殊限制，不一定是软件占用）。",
+              "RegisterHotKey failed with error {0} (not 1409; this is a system reservation or special "
+              + "limit, not necessarily software occupancy).");
+            A("truth.note.unowned.candidates", "当前运行的候选进程：", "Candidate processes currently running: ");
+            A("truth.note.unowned.more", " 等{0}个", " and {0} in total");
+            A("truth.note.free", "空闲，可以直接拿来当作新热键。", "Free; can be used directly as a new hotkey.");
+            A("truth.note.offGrid",
+              "该组合不在本次探测网格内（引擎 A 只覆盖修饰键×常用按键），因此没有实测结果。",
+              "This combination is outside the probe grid (engine A covers only modifiers x common keys), "
+              + "so there is no measured result.");
+            A("truth.note.shiftVariant",
+              "可能有 Shift 变体：声明为 {0}（{1}/{2}）",
+              "Possible Shift variant: declared as {0} ({1}/{2})");
+            A("truth.note.moreDeclared", " 等{0}条", " and {0} in total");
+        }
+
+        private static void BuildVerdict()
+        {
+            A("verdict.swallowedUpstream", "被上层钩子吞掉", "Swallowed by an upstream hook");
+            A("verdict.swallowedBeforeHotkey", "疑似被钩子截胡", "Likely intercepted by a hook");
+            A("verdict.delivered", "正常送达", "Delivered normally");
+            A("verdict.notGlobal", "不是全局热键", "Not a global hotkey");
+            A("verdict.unknown", "等待结论", "Awaiting verdict");
+
+            A("verdictLogic.pending.evidence", "还在布防时间窗内", "Still inside the arming window");
+            A("verdictLogic.pending.note",
+              "继续按几次这个组合键，等窗口结束出结论。",
+              "Press this combination a few more times and wait for the window to close for a verdict.");
+
+            A("verdictLogic.delivered.evidence",
+              "本程序的 LL 钩子看到了这个按键，且引擎 B 收到了归属报告",
+              "This program's LL hook saw the key and engine B received an attribution report");
+            A("verdictLogic.delivered.note",
+              "按键正常送达，持有者明确。",
+              "The key was delivered normally and its owner is clear.");
+
+            A("verdictLogic.swallowedUpstream.evidence",
+              "布防后的时间窗内，本程序的 WH_KEYBOARD_LL 钩子根本没看到这个组合键",
+              "Within the window after arming, this program's WH_KEYBOARD_LL hook never saw this combination");
+            A("verdictLogic.swallowedUpstream.note",
+              "按键被你机器上某个更上层的钩子吞掉了，没能到达本程序。"
+              + "常见嫌疑：键盘管理器、输入法、远程控制软件、游戏平台的叠加层。",
+              "The key was swallowed by an upstream hook on your machine and never reached this program. "
+              + "Common suspects: Keyboard Manager, IME, remote-control software, game-platform overlays.");
+
+            A("verdictLogic.notGlobal.evidence",
+              "本程序的 LL 钩子看到了这个按键，但引擎 A 的占用表里没有它",
+              "This program's LL hook saw the key, but engine A's occupancy table does not contain it");
+            A("verdictLogic.notGlobal.note",
+              "这不是全局热键，只是当前窗口自己处理的按键（普通程序收不到，所以不会有归属报告）。",
+              "This is not a global hotkey; it is only handled by the current window (ordinary programs "
+              + "do not receive it, so there is no attribution report).");
+
+            A("verdictLogic.beforeHotkey.evidence",
+              "本程序的 LL 钩子看到了这个按键，引擎 A 也把它记为已占用，但在阈值时间内没有收到归属报告",
+              "This program's LL hook saw the key and engine A marked it occupied, but no attribution "
+              + "report arrived within the threshold");
+            A("verdictLogic.beforeHotkey.note",
+              "按键到达了系统，但持有者没收到命令——疑似被钩子截胡。"
+              + "可以按对照排除工作流逐个退出可疑软件再测一次。",
+              "The key reached the system but the owner did not get the command — a hook likely "
+              + "intercepted it. Use the comparison workflow to exit suspect software one at a time and re-test.");
+
+            A("verdictLogic.late",
+              "（注：{0} 的归属报告在按键之后超过 {1:0.0} 秒才到，判为截胡）",
+              " (note: the attribution report from {0} arrived more than {1:0.0} s after the keypress, "
+              + "so it is judged as intercepted)");
+
+            A("sniffer.arm.log", "已布防 {0}：判定窗口 {1:0.0} 秒；引擎 A 把它记为{2}",
+              "Armed {0}: window {1:0.0} s; engine A records it as {2}");
+            A("sniffer.arm.occupied", "已占用", "occupied");
+            A("sniffer.arm.free", "空闲", "free");
+            A("sniffer.verdict.log", "钩子检测结论：{0} → {1}", "Hook-check verdict: {0} -> {1}");
+            A("sniffer.compare.unnamed", "未命名对照", "Unnamed comparison");
+            A("sniffer.compare.none", "结论：本次还没有任何钩子检测结论", "Verdict: no hook-check verdict yet");
+            A("sniffer.compare.candNone", "候选进程：一个都没在运行", "Candidate processes: none running");
+            A("sniffer.compare.candList", "候选进程（{0} 个）：{1}", "Candidate processes ({0}): {1}");
+
+            A("attr.unknownCombo", "(未知)", "(unknown)");
+            A("attr.unknownProc", "(未知进程)", "(unknown process)");
+            A("attr.elevatedTag", "  [已提权]", "  [elevated]");
+            A("attr.note.badParam", "无法解析热键参数", "Could not parse the hotkey parameter");
+            A("attr.note.noProc", "拿不到进程信息（可能已退出，或权限不足）",
+              "Could not get process info (it may have exited, or permissions are insufficient)");
+        }
+
+        private static void BuildScanLog()
+        {
+            A("scan.engineA.start", "引擎 A：开始全量组合键试探，共 {0} 个组合",
+              "Engine A: probing all key combinations, {0} in total");
+            A("scan.engineA.done", "引擎 A：占用 {0}，空闲 {1}，耗时 {2} 毫秒",
+              "Engine A: occupied {0}, free {1}, took {2} ms");
+            A("scan.engineD.start", "引擎 D：开始采集已知软件的配置声明",
+              "Engine D: collecting config declarations from known software");
+            A("scan.truth.building", "正在生成真相表（A × D）", "Building the truth table (A x D)");
+            A("scan.truth.candidates", "检测到 {0} 个候选进程正在运行",
+              "Detected {0} candidate processes running");
+            A("scan.truth.kind", "真相表：{0} = {1} 行", "Truth table: {0} = {1} row(s)");
+            A("scan.truth.done", "扫描完成，共 {0} 行真相表", "Scan complete, {0} truth rows in total");
+        }
+
+        private static void BuildReport()
+        {
+            A("rep.title", "{0} 报告 {1}", "{0} report {1}");
+            A("rep.h1", "HotkeyHound 全局快捷键冲突报告", "HotkeyHound — Global Hotkey Conflict Report");
+            A("rep.meta.generated", "生成时间：", "Generated: ");
+            A("rep.meta.machine", "机器名：", "Machine: ");
+            A("rep.meta.admin", "管理员权限：", "Administrator: ");
+            A("rep.meta.adminYes", "是", "yes");
+            A("rep.meta.adminNo", "否（部分提权进程看不到，建议以管理员身份重跑）",
+              "no (some elevated processes are invisible; re-run as administrator)");
+            A("rep.meta.version", "版本：", "Version: ");
+            A("rep.meta.lang", "语言：", "Language: ");
+            A("rep.meta.sep", "　|　", "  |  ");
+
+            A("rep.card.occupied", "已占用组合", "Occupied combos");
+            A("rep.card.free", "空闲组合", "Free combos");
+            A("rep.card.declared", "配置声明数", "Config declarations");
+            A("rep.card.truthRows", "真相表行数", "Truth table rows");
+            A("rep.card.matched", "声明×实测一致", "Declared = measured");
+            A("rep.card.declaredOnly", "有声明未注册", "Declared, not registered");
+            A("rep.card.unowned", "占用无声明", "Occupied, undeclared");
+            A("rep.card.freeOnly", "空闲无声明", "Free, undeclared");
+
+            A("rep.engines.title", "四个引擎的本次结果", "This run's four engines");
+            A("rep.engines.a",
+              "<li><b>引擎 A（占用扫描）</b>：已执行，探测 {0} 个组合，占用 {1} 个，耗时 {2} 毫秒。</li>",
+              "<li><b>Engine A (occupancy scan)</b>: executed, probed {0} combinations, {1} occupied, "
+              + "took {2} ms.</li>");
+            A("rep.engines.b",
+              "<li><b>引擎 B（按键归属）</b>：已实现，但按设计只在图形界面「按键归属」页显式点「开始监听」时安装钩子。"
+              + "本次结果见下方 <a href=\"#attribution\">按键归属</a> 区块。</li>",
+              "<li><b>Engine B (key attribution)</b>: implemented, but by design it installs a hook only when "
+              + "you explicitly click Listen on the Attribution page. See the "
+              + "<a href=\"#attribution\">Key attribution</a> section below for this run's result.</li>");
+            A("rep.engines.c",
+              "<li><b>引擎 C（钩子窃取检测）</b>：已实现，只在「钩子检测」页显式点「布防」时安装 "
+              + "WH_KEYBOARD_LL。本次结果见下方 <a href=\"#hookcheck\">钩子检测结论</a> 区块。</li>",
+              "<li><b>Engine C (hook interception detection)</b>: implemented; installs WH_KEYBOARD_LL only "
+              + "when you explicitly click Arm on the Hook check page. See the "
+              + "<a href=\"#hookcheck\">Hook-check verdict</a> section below.</li>");
+            A("rep.engines.d",
+              "<li><b>引擎 D（配置聚合）</b>：已执行，从 {0} 个配置文件里解析出 {1} 条声明，"
+              + "另有 {2} 条 Windows 系统保留提示。</li>",
+              "<li><b>Engine D (config aggregation)</b>: executed, parsed {1} declaration(s) from {0} config "
+              + "file(s), plus {2} Windows system-reserved hint(s).</li>");
+
+            A("rep.occupancy.h2", "占用地图（引擎 A 实测）", "Occupancy map (engine A, measured)");
+            A("rep.occupancy.hint",
+              "探测方法：对每个「修饰键组合 × 按键」调用 RegisterHotKey，成功立即注销（记为空闲），"
+              + "失败且错误码为 1409（ERROR_HOTKEY_ALREADY_REGISTERED）记为已占用。",
+              "Method: for each \"modifier x key\" call RegisterHotKey; on success unregister immediately "
+              + "(record as free); on failure with error 1409 (ERROR_HOTKEY_ALREADY_REGISTERED) record as occupied.");
+            A("rep.occupancy.search", "搜索：", "Search: ");
+            A("rep.occupancy.searchPh", "例如 Ctrl+Alt 或 Ctrl+Alt+M", "e.g. Ctrl+Alt or Ctrl+Alt+M");
+            A("rep.occupancy.onlyOccupied", "只看已占用", "Occupied only");
+            A("rep.state.occupied", "已占用", "Occupied");
+            A("rep.state.free", "空闲", "Free");
+            A("rep.occupancy.systemReserved", "系统保留：", "System reserved: ");
+            A("rep.occupancy.noneOwner", "（无）", "(none)");
+
+            A("rep.truth.h2", "配置真相表（A × D）", "Config truth table (A x D)");
+            A("rep.truth.hint",
+              "底表是引擎 A 实测的全部组合，逐条对引擎 D 的声明做精确匹配（额外做一次忽略 Shift 的模糊匹配，"
+              + "结论写在备注里）。",
+              "The base table is every combination measured by engine A, matched item-by-item against "
+              + "engine D's declarations (an extra Shift-insensitive fuzzy match is noted in the remarks).");
+            A("rep.truth.emptyKind", "这一类没有条目。", "No entries in this category.");
+            A("rep.truth.sampled", "共 {0} 条，下面按顺序抽样展示前 {1} 条（报告体积考虑）。",
+              "{0} in total; the first {1} are sampled below in order (to keep the report small).");
+            A("rep.truth.count", "（{0} 条）", " ({0})");
+
+            A("rep.attribution.h2", "按键归属（引擎 B，本次会话）", "Key attribution (engine B, this session)");
+            A("rep.attribution.empty",
+              "本次未采集按键归属。归属需要在图形界面的「按键归属」页点「开始监听」后，按下想排查的热键才会记录；"
+              + "或使用命令行 <code>HotkeyHound.exe --listen [--seconds N]</code>。"
+              + "按设计，监听只在用户显式点击时安装全局钩子；本报告若来自 <code>--scan</code>，该区块为空属于正常现象。",
+              "No key attribution was collected this run. Attribution is recorded only after you click "
+              + "Listen on the Attribution page and press the hotkey you want to investigate, or via "
+              + "<code>HotkeyHound.exe --listen [--seconds N]</code>. By design the listener installs a "
+              + "global hook only on an explicit click; if this report came from <code>--scan</code>, an "
+              + "empty section is expected.");
+            A("rep.attribution.hint",
+              "下面每一行表示「这个组合键被哪个进程持有」，由注入的 hook DLL 拦截 WM_HOTKEY 消息得到。"
+              + "记录只在开启监听后的本次会话内有效。",
+              "Each row below means \"this combination is held by which process\", captured by the injected "
+              + "hook DLL intercepting WM_HOTKEY messages. Records are valid only within this listening session.");
+            A("rep.attribution.pathMissing", "（拿不到路径，可能权限不足或进程已退出）",
+              "(path unavailable; permissions may be insufficient or the process exited)");
+
+            A("rep.hookcheck.h2", "钩子检测结论（引擎 C，本次会话）", "Hook-check verdict (engine C, this session)");
+            A("rep.hookcheck.empty",
+              "本次未采集钩子检测结论。该结论来自图形界面「钩子检测」页：点「布防」选定一个组合键后，"
+              + "在判定窗口内按下它，才能判断按键是否被更上层的钩子吞掉。"
+              + "该页只做记录与判定，绝不结束或暂停任何进程。若本报告来自 <code>--scan</code>，该区块为空属于正常现象。",
+              "No hook-check verdict was collected this run. The verdict comes from the Hook check page: "
+              + "click Arm for a combination, then press it within the window to judge whether the key was "
+              + "swallowed by an upstream hook. That page only records and judges; it never ends or pauses "
+              + "any process. If this report came from <code>--scan</code>, an empty section is expected.");
+            A("rep.hookcheck.hint",
+              "判定依赖本程序安装的 <code>WH_KEYBOARD_LL</code> 低层键盘钩子；它只观察按键，不吞键、不改键。"
+              + "四个分支：被上层钩子吞掉 / 疑似被钩子截胡 / 正常送达 / 不是全局热键。",
+              "The verdict relies on this program's <code>WH_KEYBOARD_LL</code> low-level keyboard hook; "
+              + "it only observes keys, never swallows or alters them. Four branches: swallowed upstream / "
+              + "likely intercepted / delivered normally / not a global hotkey.");
+            A("rep.hookcheck.compareH3", "对照排除记录", "Comparison records");
+            A("rep.hookcheck.compareHint",
+              "这些快照是用户在界面上点「记录本次对照」时留下的结论与候选进程，用于「退出可疑软件前后」逐条对比。"
+              + "工具只记录，不会结束任何进程。",
+              "These snapshots are verdicts and candidate processes saved when the user clicked Record "
+              + "comparison in the UI, for item-by-item comparison before/after exiting suspect software. "
+              + "The tool only records; it never ends any process.");
+
+            A("rep.declared.h2", "配置声明清单（引擎 D）", "Config declarations (engine D)");
+            A("rep.declared.empty", "本次没有从任何已知软件里解析出热键声明。",
+              "No hotkey declarations were parsed from any known software this run.");
+            A("rep.declared.count", "（{0} 条）", " ({0})");
+            A("rep.declared.module", "模块", "Module");
+            A("rep.declared.purpose", "用途", "Purpose");
+            A("rep.declared.raw", "原始值", "Raw value");
+            A("rep.declared.source", "来源文件", "Source file");
+
+            A("rep.advice.h2", "建议", "Advice");
+            A("rep.advice.km",
+              "<li><b>PowerToys 键盘管理器</b>截走了 <b>{0}</b> 个组合：{1}。"
+              + "键盘管理器用的是底层键盘钩子，它会在按键到达其它程序之前改键或启动程序；"
+              + "如果别处也想用这些组合，几乎必然是这里先赢。确认不需要就删掉对应的那条重映射。</li>",
+              "<li><b>PowerToys Keyboard Manager</b> has grabbed <b>{0}</b> combination(s): {1}. "
+              + "Keyboard Manager uses a low-level keyboard hook and remaps keys or launches programs before "
+              + "the key reaches other applications; if something else also wants these combinations, this "
+              + "almost certainly wins first. If you do not need them, delete the corresponding remapping.</li>");
+            A("rep.advice.peek",
+              "<li><b>PowerToys Peek</b> uses <b>{0}</b> combination(s): {1}. "
+              + "This key often conflicts with the IME's language switch and IDE completion; {2}</li>",
+              "<li><b>PowerToys Peek</b> uses <b>{0}</b> combination(s): {1}. "
+              + "This key often conflicts with the IME language switch and IDE completion; {2}</li>");
+            A("rep.advice.peekOccupied",
+              "实测确实被占用。", "it is indeed occupied in the measurement.");
+            A("rep.advice.peekNotReg",
+              "当前没有注册成功，说明 Peek 未运行或改用钩子实现，风险仍在。",
+              "it did not register successfully now, so Peek is either not running or uses a hook; the risk remains.");
+            A("rep.advice.unowned",
+              "<div class=\"warn\">有 <b>{0}</b> 个组合被占用但找不到任何声明。"
+              + "这些多半来自配置不可读的程序（输入法、IM、驱动工具，例如 NVIDIA 叠加层自带的热键），"
+              + "也可能是被系统保留。想知道「按下去到底是谁响应」，可用「按键归属」页（引擎 B）监听，"
+              + "或用「钩子检测」页（引擎 C）判断按键是否被更上层的钩子吞掉。</div>",
+              "<div class=\"warn\">{0} combination(s) are occupied but have no declaration. "
+              + "Most come from software whose config is unreadable (IME, IM, driver tools, e.g. NVIDIA overlay "
+              + "hotkeys), or may be system-reserved. To find out \"who actually responds when pressed\", use the "
+              + "Attribution page (engine B) or the Hook check page (engine C) to see if a hook swallows the key.</div>");
+            A("rep.advice.declaredNotReg",
+              "<div class=\"warn\">有 <b>{0}</b> 个组合在配置里有声明，但没有注册到系统里。"
+              + "典型原因：该软件当前没运行，或它用键盘钩子实现热键（键盘钩子不占 RegisterHotKey）。"
+              + "所以「扫描说空闲」并不等于「按下去没人响应」。</div>",
+              "<div class=\"warn\">{0} combination(s) are declared in config but not registered in the system. "
+              + "Typical reasons: the software is not running, or it implements the hotkey with a keyboard hook "
+              + "(hooks do not use RegisterHotKey). So \"the scan says free\" does not mean \"nothing responds "
+              + "when pressed\".</div>");
+            A("rep.advice.freeOk1",
+              "<div class=\"ok\">有 <b>{0}</b> 个组合既没被占用也没人声明，可以直接拿来用。"
+              + "<code>Ctrl+Alt+F1..F24</code>、<code>Win+Ctrl+Alt+F1..F24</code> 这类组合几乎总是安全的",
+              "<div class=\"ok\">{0} combination(s) are neither occupied nor declared and can be used directly. "
+              + "Combinations like <code>Ctrl+Alt+F1..F24</code> and <code>Win+Ctrl+Alt+F1..F24</code> are "
+              + "almost always safe");
+            A("rep.advice.freeOk2", "，本次实测空闲的例如 {0}。", "; free ones measured this run include {0}.");
+            A("rep.advice.freeOkEnd", "。", ".");
+            A("rep.advice.none", "<div class=\"hint\">本次没有发现值得特别提示的冲突。</div>",
+              "<div class=\"hint\">No conflicts worth special mention were found this run.</div>");
+
+            A("rep.method.h2", "方法与局限", "Method and limitations");
+            A("rep.method.howA", "引擎 A 怎么判断「占用」", "How engine A decides \"occupied\"");
+            A("rep.method.howA.body",
+              "<p>对每一个「修饰键组合 × 按键」调用 Win32 的 <code>RegisterHotKey</code>："
+              + "如果返回成功，说明这个组合没人占用，我们立刻 <code>UnregisterHotKey</code> 注销并记为「空闲」；"
+              + "如果失败且错误码是 1409，说明系统里已经有人注册了同一个组合，记为「已占用」。</p>"
+              + "<p>本工具不写任何配置、不改注册表，注册动作全部在同一个瞬间被撤销，因此扫描本身没有副作用。</p>",
+              "<p>For each \"modifier combination x key\" it calls the Win32 <code>RegisterHotKey</code>: on "
+              + "success, the combination is unowned, so it immediately calls <code>UnregisterHotKey</code> and "
+              + "records it as free; on failure with error 1409, someone has already registered the same "
+              + "combination, so it is recorded as occupied.</p>"
+              + "<p>The tool writes no config and does not touch the registry; every registration is undone at "
+              + "the same instant, so the scan itself has no side effects.</p>");
+            A("rep.method.why.h", "为什么「扫描说空闲」不代表按下去没人管",
+              "Why \"the scan says free\" does not mean nobody handles it when pressed");
+            A("rep.method.why.b1",
+              "<li><b>键盘钩子型热键看不到。</b>PowerToys 键盘管理器、AutoHotkey、输入法、部分游戏工具用底层键盘钩子实现热键，"
+              + "它们不调用 RegisterHotKey，所以引擎 A 会把键位报成「空闲」，实际上按下后会被它们抢先处理。</li>",
+              "<li><b>Keyboard-hook hotkeys are invisible.</b> PowerToys Keyboard Manager, AutoHotkey, IMEs and some "
+              + "game tools implement hotkeys with low-level keyboard hooks; they do not call RegisterHotKey, so "
+              + "engine A reports the key as \"free\" even though they grab it first when pressed.</li>");
+            A("rep.method.why.b2",
+              "<li><b>只有本会话可见。</b>RegisterHotKey 是会话级/窗口站级的，别的登录会话注册的热键这里探测不到。</li>",
+              "<li><b>Only this session is visible.</b> RegisterHotKey is session/window-station scoped; hotkeys "
+              + "registered in other login sessions cannot be probe here.</li>");
+            A("rep.method.why.b3",
+              "<li><b>只是「注册失败」不等于「软件占用」。</b>少数组合（如部分面板功能键）会返回 1409 之外的错误码，"
+              + "报告里会把错误码一并列出，请按备注分辨。</li>",
+              "<li><b>\"Registration failed\" is not the same as \"software occupancy\".</b> A few combinations "
+              + "(e.g. some panel function keys) return errors other than 1409; the report lists the error code, "
+              + "so read the remarks carefully.</li>");
+            A("rep.method.miss.h", "为什么可能漏掉 32 位或提权进程",
+              "Why 32-bit or elevated processes may be missed");
+            A("rep.method.miss.b1",
+              "<li>本程序是 64 位，注入的 hook DLL 也是 x64，因此看不到 32 位进程的按键归属。</li>",
+              "<li>This program is 64-bit and the injected hook DLL is x64, so key attribution for 32-bit "
+              + "processes is invisible.</li>");
+            A("rep.method.miss.b2",
+              "<li>非管理员运行时，针对提权进程（例如以管理员身份运行的 PowerToys）拿不到进程信息。",
+              "<li>When not run as administrator, process info for elevated processes (e.g. PowerToys running as "
+              + "administrator) cannot be obtained.");
+            A("rep.method.miss.b2this", "<b>本次就是以非管理员身份运行的。</b>",
+              "<b>This run was executed as a non-administrator.</b>");
+            A("rep.method.miss.b3",
+              "<li><b>本次以{0}运行</b>（exe 位于带 Low 标签的目录）。UIPI 会拦住钩子注入，引擎 B/C 基本失效，"
+              + "请把 exe 复制到普通目录（例如 <code>C:\\Tools\\</code>）后再运行。</li>",
+              "<li><b>This run was executed at {0}</b> (the exe is in a directory carrying the Low label). UIPI "
+              + "blocks hook injection, so engines B/C are largely useless; copy the exe to an ordinary directory "
+              + "(e.g. <code>C:\\Tools\\</code>) and run it from there.</li>");
+            A("rep.method.decl.h", "配置声明的解读注意", "Reading config declarations");
+            A("rep.method.decl.b1",
+              "<li>声明来自配置文件，反映的是「软件打算用这个键」，不等于「此刻真的生效」——软件没运行、模块被禁用、"
+              + "或者同一软件内部的其它设置覆盖了它，都可能让声明落空。</li>",
+              "<li>Declarations come from config files and reflect \"the software intends to use this key\", not "
+              + "\"it takes effect right now\" — the software being stopped, the module being disabled, or another "
+              + "setting in the same software overriding it can all invalidate a declaration.</li>");
+            A("rep.method.decl.b2",
+              "<li>标着 <code>[已禁用]</code> 的条目属于当前被关掉的模块，通常不会真的占用键位。</li>",
+              "<li>Entries marked <code>[disabled]</code> belong to currently disabled modules and usually do not "
+              + "occupy the key.</li>");
+            A("rep.method.decl.b3",
+              "<li>MSI Afterburner 的热键编码格式未在本机验证（本机所有项都是「未设置」），Everything 的"
+              + "「修饰符:VK」十进制编码同理——本机三项都写着 0，两种口径都需要人工核对。</li>",
+              "<li>MSI Afterburner's hotkey encoding was not verified on this machine (all entries are \"not set\"), "
+              + "and so is Everything's \"modifier:VK\" decimal encoding — all three entries here are 0, so both "
+              + "formats need a manual check.</li>");
+            A("rep.method.log.h", "本次运行日志", "Run log");
+            A("rep.footer", "{0} {1} · 报告语言：{2} · 由 HotkeyHound 生成",
+              "{0} {1} · Report language: {2} · Generated by HotkeyHound");
+
+            A("rep.js.shown", "显示 {0} / {1} 条", "Showing {0} / {1}");
+            A("rep.list.more", " 等", " and more");
+        }
+
+        private static void BuildUi()
+        {
+            A("ui.title", "{0} —— {1}", "{0} — {1}");
+            A("ui.log.group", "日志", "Log");
+            A("ui.status.ready", "就绪", "Ready");
+            A("ui.tab.overview", "扫描总览", "Scan overview");
+            A("ui.tab.attribution", "按键归属", "Key attribution");
+            A("ui.tab.hookcheck", "钩子检测", "Hook detection");
+            A("ui.tab.truth", "配置真相表", "Config truth table");
+            A("ui.tab.report", "报告与关于", "Report & about");
+            A("ui.help.button", "帮助", "Help");
+            A("ui.log.helpFailed", "打开帮助窗口失败：{0}", "Failed to open the help window: {0}");
+            A("ui.banner.prefix", "⚠ ", "⚠ ");
+            A("ui.banner.low",
+              "低完整性运行（{0}）：UIPI 会拦住钩子注入，引擎 B/C 基本失效，写 %TEMP%/%LOCALAPPDATA% 也会被拒。"
+              + "请把 exe 复制到普通目录（如 C:\\Tools\\）后再运行。",
+              "Running at low integrity ({0}): UIPI blocks hook injection, engines B/C are largely useless, and "
+              + "writes to %TEMP%/%LOCALAPPDATA% are denied. Copy the exe to an ordinary directory "
+              + "(e.g. C:\\Tools\\) and run it from there.");
+            A("ui.banner.notAdmin",
+              "非管理员：看不到以管理员身份运行的提权进程（例如 PowerToys）。可点右侧按钮提权重启。",
+              "Not an administrator: elevated processes (e.g. PowerToys) are invisible. Click the button on the "
+              + "right to relaunch elevated.");
+            A("ui.banner.x64",
+              "本程序是 64 位：注入的 hook DLL 也是 x64，覆盖不到正在运行的 32 位进程的按键归属。",
+              "This program is 64-bit and the injected hook DLL is x64, so key attribution for running 32-bit "
+              + "processes is not covered.");
+            A("ui.banner.elevate", "提权重启", "Relaunch elevated");
+            A("ui.log.started", "HotkeyHound 已启动，版本 {0}", "HotkeyHound started, version {0}");
+            A("ui.log.admin", "管理员权限：{0}", "Administrator: {0}");
+            A("ui.log.adminYes", "有", "yes");
+            A("ui.log.adminNo", "无（部分提权进程不可见）", "no (some elevated processes are invisible)");
+            A("ui.log.howto",
+              "点「开始扫描」运行引擎 A（占用扫描）+ 引擎 D（配置聚合）并生成真相表。",
+              "Click Start scan to run engine A (occupancy scan) + engine D (config aggregation) and build the truth table.");
+            A("ui.restart.title", "{0} —— 提权重启", "{0} — relaunch elevated");
+            A("ui.restart.failed", "以管理员身份重启失败：{0}", "Relaunch as administrator failed: {0}");
+            A("ui.restart.cancelled", "已取消提权（你在 UAC 提示里点了「否」）。",
+              "Elevation cancelled (you chose No in the UAC prompt).");
+            A("ui.restart.ok", "已请求提权重启，本窗口即将关闭。", "Elevation requested; this window will now close.");
+
+            // Overview
+            A("ui.ov.scan", "开始扫描", "Start scan");
+            A("ui.ov.report", "生成 HTML 报告", "Generate HTML report");
+            A("ui.ov.elevate", "以管理员身份重启", "Relaunch as administrator");
+            A("ui.ov.notScanned", "尚未扫描", "Not scanned yet");
+            A("ui.ov.card.occupied", "占用组合", "Occupied");
+            A("ui.ov.card.free", "空闲组合", "Free");
+            A("ui.ov.card.declared", "配置声明数", "Declarations");
+            A("ui.ov.card.truth", "真相表行数", "Truth rows");
+            A("ui.ov.hint",
+              "扫描会用 RegisterHotKey 逐个试探全部组合键，成功即立刻注销；不修改任何设置。"
+              + "「已占用但无声明」多半来自输入法、IM、驱动工具等配置不可读的程序。",
+              "The scan probes every combination with RegisterHotKey and unregisters on success; it modifies no "
+              + "settings. \"Occupied but undeclared\" mostly comes from software whose config is unreadable "
+              + "(IME, IM, driver tools).");
+            A("ui.col.combo", "组合键", "Combination");
+            A("ui.col.state", "状态", "State");
+            A("ui.col.owner", "归属 / 声明来源", "Owner / declaration");
+            A("ui.col.evidence", "证据", "Evidence");
+            A("ui.col.note", "备注", "Remark");
+            A("ui.col.path", "进程路径", "Process path");
+            A("ui.ov.owner.none", "（未找到声明）", "(no declaration found)");
+            A("ui.ov.owner.reserved", "系统保留：{0}", "System reserved: {0}");
+            A("ui.ov.scanning", "正在扫描…", "Scanning…");
+            A("ui.ov.progress", "正在扫描：{0} / {1}", "Scanning: {0} / {1}");
+            A("ui.ov.scanFailed", "扫描失败：{0}", "Scan failed: {0}");
+            A("ui.ov.scanFailedDetail", "扫描失败：{0}\r\n\r\n详细信息见底部日志区。",
+              "Scan failed: {0}\r\n\r\nSee the log panel at the bottom for details.");
+            A("ui.ov.scanDone", "扫描完成，耗时 {0} 毫秒", "Scan complete, took {0} ms");
+            A("ui.ov.saveTitle", "保存 HTML 报告", "Save HTML report");
+            A("ui.ov.saveFilter", "HTML 文件 (*.html)|*.html", "HTML files (*.html)|*.html");
+            A("ui.ov.reportSaved", "报告已生成：\r\n{0}\r\n\r\n现在打开吗？",
+              "Report generated:\r\n{0}\r\n\r\nOpen it now?");
+            A("ui.ov.reportWriteFailed", "报告写入失败：{0}", "Failed to write report: {0}");
+            A("ui.ov.openFailed", "无法打开：{0}\r\n{1}", "Cannot open: {0}\r\n{1}");
+            A("ui.ov.ownerTitle", "归属 / 声明来源", "Owner / declaration");
+
+            // Truth
+            A("ui.truth.filter.all", "全部（有声明或有占用）", "All (declared or occupied)");
+            A("ui.truth.category", "类别：", "Category: ");
+            A("ui.truth.explain",
+              "双击某一行可以打开它的来源配置文件。真相表底表是引擎 A 的全部组合。",
+              "Double-click a row to open its source config file. The truth table's base is every combination "
+              + "from engine A.");
+            A("ui.col.type", "类别", "Category");
+            A("ui.col.declaredBy", "声明来源", "Declared by");
+            A("ui.col.ownerHint", "已知归属提示", "Known owner hint");
+            A("ui.truth.notScanned", "尚未扫描", "Not scanned yet");
+            A("ui.truth.sample", "显示 {0} / {1} 条（抽样上限 300）", "Showing {0} / {1} (sampling cap 300)");
+            A("ui.truth.count", "共 {0} 条", "{0} in total");
+            A("ui.truth.noSource", "这一条没有对应的来源配置文件。\r\n\r\n{0}",
+              "This row has no corresponding source config file.\r\n\r\n{0}");
+            A("ui.truth.dlgTitle", "配置真相表", "Config truth table");
+
+            // Attribution
+            A("ui.at.title", "按键归属（引擎 B）：按下热键后，报出是哪个进程持有它",
+              "Key attribution (engine B): press a hotkey to see which process holds it");
+            A("ui.at.hint",
+              "本页加载时不会安装任何钩子。只有在你点「开始监听」后，程序才会装一个全局消息钩子拦截 WM_HOTKEY 消息；"
+              + "点「停止监听」会立刻卸载它。原理：热键持有者收到消息时，注入的 hook DLL 把「持有者 PID + 组合键」报回来。",
+              "No hook is installed when this page loads. Only after you click Start listening does the program "
+              + "install a global message hook to intercept WM_HOTKEY; clicking Stop listening unloads it "
+              + "immediately. How it works: when the hotkey's owner receives the message, the injected hook DLL "
+              + "reports back \"owner PID + combination\".");
+            A("ui.at.start", "开始监听", "Start listening");
+            A("ui.at.stop", "停止监听", "Stop listening");
+            A("ui.at.clear", "清空", "Clear");
+            A("ui.at.copy", "复制到剪贴板", "Copy to clipboard");
+            A("ui.at.notStarted", "未开始监听。", "Not listening.");
+            A("ui.at.warn.low",
+              "⚠ 当前以{0}运行，UIPI 会拦住钩子注入，看不到任何进程。请把 exe 复制到普通目录再运行。",
+              "⚠ Running at {0}; UIPI blocks hook injection, so no process is visible. Copy the exe to an "
+              + "ordinary directory and run it from there.");
+            A("ui.at.warn.notAdmin",
+              "⚠ 非管理员：看不到提权进程（如以管理员运行的 PowerToys）。建议「以管理员身份重启」。",
+              "⚠ Not an administrator: elevated processes (e.g. PowerToys run as admin) are invisible. Relaunch "
+              + "as administrator.");
+            A("ui.at.warn.ok",
+              "运行环境正常：管理员 + 中/高完整性，提权进程也应可见。",
+              "Environment is normal: administrator + medium/high integrity; elevated processes should be visible.");
+            A("ui.at.col.time", "时间", "Time");
+            A("ui.at.col.process", "进程名", "Process");
+            A("ui.at.col.pid", "PID", "PID");
+            A("ui.at.col.elevated", "是否提权", "Elevated");
+            A("ui.at.unknownPath", "(拿不到路径)", "(no path)");
+            A("ui.at.captured", "已捕获 {0} 条归属记录。", "Captured {0} attribution record(s).");
+            A("ui.at.installing", "正在安装钩子…", "Installing hook…");
+            A("ui.at.stopped", "已停止监听，钩子已卸载（UnhookWindowsHookEx）。",
+              "Stopped listening; hook unloaded (UnhookWindowsHookEx).");
+            A("ui.at.listening", "正在监听…请按下要排查的全局热键。",
+              "Listening… press the global hotkey you want to investigate.");
+            A("ui.at.startFailed", "启动失败：{0}", "Start failed: {0}");
+            A("ui.at.startFailedDetail",
+              "无法安装全局钩子：\r\n{0}\r\n\r\n常见原因：程序以低完整性运行（exe 在带 Low 标签的目录），"
+              + "UIPI 拦住了注入；或当前不是管理员，看不到提权进程。\r\n详见底部日志。",
+              "Cannot install the global hook:\r\n{0}\r\n\r\nCommon reasons: the program runs at low integrity "
+              + "(exe in a directory carrying the Low label) and UIPI blocked injection; or you are not an "
+              + "administrator and elevated processes are invisible.\r\nSee the log at the bottom.");
+            A("ui.at.cleared", "已清空本页结果与本次会话归属记录。",
+              "Cleared this page's results and this session's attribution records.");
+            A("ui.at.copyHeader", "时间\t进程名\tPID\t组合键\t进程路径\t是否提权",
+              "Time\tProcess\tPID\tCombination\tPath\tElevated");
+            A("ui.at.noRecords", "(无记录)", "(no records)");
+            A("ui.at.copied", "已复制 {0} 条记录到剪贴板。", "Copied {0} record(s) to the clipboard.");
+            A("ui.at.copyFailed", "复制失败：{0}", "Copy failed: {0}");
+
+            // Hook check
+            A("ui.hk.title", "钩子检测（引擎 C）：判断按键是否被更上层的钩子吞掉",
+              "Hook detection (engine C): judge whether a key is swallowed by an upstream hook");
+            A("ui.hk.guide",
+              "三步：① 填好组合键后点「布防」（此刻才安装低层键盘钩子）　② 立即按下有问题的快捷键　③ 看下方结论。",
+              "Three steps: (1) enter a combination and click Arm (only then is the low-level keyboard hook "
+              + "installed)  (2) immediately press the problematic hotkey  (3) read the verdict below.");
+            A("ui.hk.arm", "布防（安装钩子）", "Arm (install hook)");
+            A("ui.hk.stop", "停止（卸载钩子）", "Stop (unload hook)");
+            A("ui.hk.notArmed", "低层键盘钩子未安装。", "Low-level keyboard hook not installed.");
+            A("ui.hk.warn",
+              "提示：本页只观察按键、不吞键、不改键，也绝不结束或暂停任何进程。"
+              + "钩子判定为「被吞掉」时，请用下方「对照排除」逐条记录再人工退出可疑软件对比。",
+              "Note: this page only observes keys — it never swallows or alters them, and never ends or pauses "
+              + "any process. When a verdict is \"swallowed\", use the comparison workflow below to record, then "
+              + "manually exit suspect software and compare.");
+            A("ui.hk.col.verdict", "判定", "Verdict");
+            A("ui.hk.col.note", "说明", "Explanation");
+            A("ui.hk.candTitle", "候选进程（当前正在运行）", "Candidate processes (currently running)");
+            A("ui.hk.refresh", "刷新候选进程", "Refresh candidates");
+            A("ui.hk.steps",
+              "对照排除步骤：\r\n"
+              + "1. 点「记录本次对照」保存当前结论；\r\n"
+              + "2. 手动退出一个上面列出的可疑软件；\r\n"
+              + "3. 回到本页再测一次同一组合键；\r\n"
+              + "4. 再点「记录本次对照」，对比两次结论。",
+              "Comparison workflow:\r\n"
+              + "1. Click Record comparison to save the current verdict;\r\n"
+              + "2. Manually exit one suspect process listed above;\r\n"
+              + "3. Come back and re-test the same combination;\r\n"
+              + "4. Click Record comparison again and compare the two verdicts.");
+            A("ui.hk.record", "记录本次对照", "Record comparison");
+            A("ui.hk.parseFail", "无法解析这个组合键。示例：Ctrl+Alt+M、Win+Shift+F23。",
+              "Cannot parse this combination. Examples: Ctrl+Alt+M, Win+Shift+F23.");
+            A("ui.hk.installing", "正在安装低层键盘钩子…", "Installing low-level keyboard hook…");
+            A("ui.hk.installFail", "钩子安装失败：{0}", "Failed to install hook: {0}");
+            A("ui.hk.installFailDlg", "无法安装 WH_KEYBOARD_LL 钩子：\r\n{0}",
+              "Cannot install the WH_KEYBOARD_LL hook:\r\n{0}");
+            A("ui.hk.armFail", "布防失败：{0}", "Arming failed: {0}");
+            A("ui.hk.armed", "已布防 {0}，窗口 {1:0.0} 秒，请现在按下它。",
+              "Armed {0}, window {1:0.0} s; press it now.");
+            A("ui.hk.armedTick", "布防中：{0}，窗口剩余 {1:0.0} 秒，请现在按下它。",
+              "Armed: {0}, {1:0.0} s left in the window; press it now.");
+            A("ui.hk.stopped", "已停止并卸载低层键盘钩子（UnhookWindowsHookEx）。",
+              "Stopped and unloaded the low-level keyboard hook (UnhookWindowsHookEx).");
+            A("ui.hk.verdictPrefix", "结论：{0}", "Verdict: {0}");
+            A("ui.hk.noCandidates", "(没有候选进程在运行)", "(no candidate processes running)");
+            A("ui.hk.compare.label", "对照：{0}", "Comparison: {0}");
+            A("ui.hk.compare.saved",
+              "已记录本次对照快照（{0} 行）。\r\n"
+              + "接下来请手动退出一个可疑软件，再用同一组合键测一次并再次记录，然后对比两次结论。\r\n"
+              + "本工具不会结束或暂停任何进程。",
+              "Recorded this comparison snapshot ({0} line(s)).\r\n"
+              + "Next, manually exit one suspect process, re-test the same combination and record again, then "
+              + "compare the two verdicts.\r\nThis tool never ends or pauses any process.");
+            A("ui.hk.compare.failed", "记录对照失败：{0}", "Failed to record comparison: {0}");
+
+            // Report & about
+            A("ui.rt.heading", "报告与关于", "Report & about");
+            A("ui.rt.pathLabel", "报告路径：", "Report path: ");
+            A("ui.rt.open", "打开报告", "Open report");
+            A("ui.rt.generate", "生成报告", "Generate report");
+            A("ui.rt.noReport", "报告文件还不存在，请先点「生成报告」。",
+              "The report file does not exist yet; click Generate report first.");
+            A("ui.rt.notGenerated", "尚未生成报告。可先在「扫描总览」里跑一次扫描。",
+              "No report generated yet. Run a scan on the Scan overview page first.");
+            A("ui.rt.release",
+              "{0} {1} —— {2}\r\n运行框架：.NET Framework {3}（Windows 自带，无需安装）\r\n"
+              + "机器：{4}　用户：{5}　管理员：{6}",
+              "{0} {1} — {2}\r\nRuntime: .NET Framework {3} (bundled with Windows, no install needed)\r\n"
+              + "Machine: {4}  User: {5}  Admin: {6}");
+            A("ui.rt.limits",
+              "已知限制：\r\n"
+              + "· 引擎 B（按键归属）与引擎 C（钩子检测）已实现，但按设计只在「按键归属」页点「开始监听」或"
+              + "「钩子检测」页点「布防」时才安装钩子；程序加载本页不会安装任何钩子。\r\n"
+              + "· 用键盘钩子实现的热键（PowerToys 键盘管理器、AutoHotkey、输入法）不会占 RegisterHotKey，"
+              + "因此引擎 A 会把它们报成「空闲」——报告里靠引擎 D 的配置声明补上。\r\n"
+              + "· 非管理员运行时看不到提权进程的热键归属；本程序是 x64，覆盖不到 32 位进程。\r\n"
+              + "· 本工具全程只读：不写配置、不改注册表、注册的热键立刻注销。",
+              "Known limitations:\r\n"
+              + "· Engines B (attribution) and C (hook detection) are implemented, but by design hooks are "
+              + "installed only when you click Start listening on the Attribution page or Arm on the Hook "
+              + "detection page; simply loading this page installs no hook.\r\n"
+              + "· Hotkeys implemented with keyboard hooks (PowerToys Keyboard Manager, AutoHotkey, IMEs) do "
+              + "not use RegisterHotKey, so engine A reports them as \"free\" — the report fills the gap with "
+              + "engine D's config declarations.\r\n"
+              + "· When not run as administrator, attribution for elevated processes is invisible; this "
+              + "program is x64 and does not cover 32-bit processes.\r\n"
+              + "· The tool is read-only throughout: it writes no config, does not touch the registry, and "
+              + "unregisters hotkeys immediately.");
+            A("ui.rt.needScan", "还没有扫描结果，请先到「扫描总览」点「开始扫描」。",
+              "No scan result yet; go to Scan overview and click Start scan first.");
+            A("ui.rt.generated", "已生成：{0}（{1:N0} 字节）", "Generated: {0} ({1:N0} bytes)");
+            A("ui.rt.writeFailed", "报告写入失败：{0}", "Failed to write report: {0}");
+            A("ui.rt.langLabel", "语言 / Language：", "Language: ");
+            A("ui.rt.langRestart", "语言已切换为 {0}，请重启程序后生效。",
+              "Language switched to {0}; restart the program for it to take effect.");
+        }
+
+        private static void BuildHelp()
+        {
+            A("help.title", "帮助", "Help");
+            A("help.zh", "中文", "中文");
+            A("help.en", "English", "English");
+            A("help.openBrowser", "在浏览器中打开", "Open in browser");
+            A("help.close", "关闭", "Close");
+            A("help.exportFailed", "无法导出帮助文件：{0}", "Cannot export the help file: {0}");
+            A("help.missing", "找不到内嵌的帮助文档资源。", "Embedded help document resource not found.");
+        }
+
+        // ------------------------------------------------------------------ 术语表
+        // 引擎 D 的适配器产出的是中文「用途/模块」短语，这些文本会进入报告和界面。
+        // 为避免直接改十几个适配器（风险大且易漏），这里用一张「中文→英文」术语表，
+        // 在渲染边界统一翻译（Reconciler / ReportBuilder / UI 调用 Term）。
+
+        private static readonly Dictionary<string, string> Terms = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        private static void AddTerm(string zh, string en)
+        {
+            Terms[zh] = en;
+        }
+
+        private static void BuildTerms()
+        {
+            // 通用
+            AddTerm("热键", "Hotkey");
+            AddTerm("全局热键", "Global hotkey");
+            AddTerm("内置表", "Built-in table");
+            AddTerm("配置", "Config");
+            AddTerm("注册表", "Registry");
+            AddTerm("全局", "Global");
+
+            // Everything
+            AddTerm("打开新搜索窗口", "Open a new search window");
+            AddTerm("显示主窗口", "Show the main window");
+            AddTerm("显示/隐藏主窗口", "Show/hide the main window");
+
+            // MSI Afterburner
+            AddTerm("切换屏幕显示", "Toggle the on-screen display");
+            AddTerm("开启屏幕显示", "Enable the on-screen display");
+            AddTerm("关闭屏幕显示", "Disable the on-screen display");
+            AddTerm("屏蔽屏幕显示服务", "Block the OSD server");
+            AddTerm("切换帧率限制", "Toggle the framerate limit");
+            AddTerm("开启帧率限制", "Enable the framerate limit");
+            AddTerm("关闭帧率限制", "Disable the framerate limit");
+            AddTerm("视频录制", "Video capture");
+            AddTerm("预先录制", "Prerecord");
+            AddTerm("按键通话", "Push to talk");
+            AddTerm("按键通话 2", "Push to talk 2");
+            AddTerm("开始录制", "Start recording");
+            AddTerm("结束录制", "Stop recording");
+
+            // NVIDIA ShadowPlay
+            AddTerm("叠加层开关", "Overlay toggle");
+            AddTerm("手动录制", "Manual recording");
+            AddTerm("即时回放开关", "Instant replay toggle");
+            AddTerm("即时回放预设", "Instant replay preset");
+            AddTerm("即时回放预设样式 1", "Instant replay preset style 1");
+            AddTerm("即时回放预设样式 2", "Instant replay preset style 2");
+            AddTerm("即时回放预设样式 3", "Instant replay preset style 3");
+            AddTerm("即时回放界面", "Instant replay UI");
+            AddTerm("Ansel 拍照界面", "Ansel photo mode UI");
+            AddTerm("性能监控叠加层", "Performance overlay");
+            AddTerm("性能监控指标切换", "Cycle performance metrics");
+            AddTerm("重置性能监控平均值", "Reset performance average metrics");
+            AddTerm("性能监控日志开关", "Toggle performance logging");
+            AddTerm("性能监控字体切换", "Cycle performance overlay font");
+            AddTerm("麦克风开关", "Microphone toggle");
+            AddTerm("麦克风按键通话", "Microphone push to talk");
+            AddTerm("聊天界面开关", "Chat UI toggle");
+            AddTerm("聊天按键通话", "Chat push to talk");
+            AddTerm("键盘输入对话框", "Keyboard input dialog");
+            AddTerm("自定义叠加层 B", "Custom overlay B");
+            AddTerm("自定义叠加层 C", "Custom overlay C");
+
+            // OBS Studio
+            AddTerm("开始推流", "Start streaming");
+            AddTerm("停止推流", "Stop streaming");
+            AddTerm("停止录制", "Stop recording");
+            AddTerm("切换录制", "Toggle recording");
+            AddTerm("切换推流", "Toggle streaming");
+            AddTerm("开启回放缓存", "Start the replay buffer");
+            AddTerm("关闭回放缓存", "Stop the replay buffer");
+            AddTerm("保存回放", "Save replay");
+            AddTerm("暂停录制", "Pause recording");
+            AddTerm("继续录制", "Resume recording");
+            AddTerm("开启虚拟摄像头", "Start the virtual camera");
+            AddTerm("关闭虚拟摄像头", "Stop the virtual camera");
+            AddTerm("按键静音", "Push to mute");
+            AddTerm("切换预览", "Toggle the preview");
+            AddTerm("开始回放缓存", "Start the replay buffer");
+
+            // 通用动作
+            AddTerm("截图", "Screenshot");
+
+            // Windows 系统保留（内置表）
+            AddTerm("锁定计算机", "Lock the computer");
+            AddTerm("显示/隐藏桌面", "Show/hide the desktop");
+            AddTerm("最小化所有窗口", "Minimize all windows");
+            AddTerm("还原最小化的窗口", "Restore minimized windows");
+            AddTerm("打开文件资源管理器", "Open File Explorer");
+            AddTerm("打开「运行」对话框", "Open the Run dialog");
+            AddTerm("打开「设置」", "Open Settings");
+            AddTerm("打开搜索", "Open search");
+            AddTerm("打开快速设置", "Open Quick Settings");
+            AddTerm("打开通知中心", "Open Notification Center");
+            AddTerm("打开小组件", "Open Widgets");
+            AddTerm("剪贴板历史", "Clipboard history");
+            AddTerm("打开高级用户菜单", "Open the Power User menu");
+            AddTerm("投影/外接显示", "Project / external display");
+            AddTerm("连接无线显示/音频", "Connect to a wireless display/audio");
+            AddTerm("锁定设备方向", "Lock device orientation");
+            AddTerm("打开「辅助功能」", "Open Accessibility");
+            AddTerm("反馈中心", "Feedback Hub");
+            AddTerm("语音输入", "Voice typing");
+            AddTerm("聚焦提示", "Set focus to a tip");
+            AddTerm("任务视图", "Task View");
+            AddTerm("启动讲述人", "Launch Narrator");
+            AddTerm("切换输入法", "Switch input method");
+            AddTerm("系统属性", "System properties");
+            AddTerm("截屏并保存到图片文件夹", "Screenshot saved to the Pictures folder");
+            AddTerm("截图工具（区域截图）", "Snipping tool (region capture)");
+            AddTerm("新建虚拟桌面", "Create a new virtual desktop");
+            AddTerm("切换到左侧虚拟桌面", "Switch to the virtual desktop on the left");
+            AddTerm("切换到右侧虚拟桌面", "Switch to the virtual desktop on the right");
+            AddTerm("关闭当前虚拟桌面", "Close the current virtual desktop");
+            AddTerm("重置显卡驱动", "Reset the graphics driver");
+            AddTerm("启动讲述人（替代入口）", "Launch Narrator (alternative entry)");
+            AddTerm("窗口最大化", "Maximize the window");
+            AddTerm("窗口还原/最小化", "Restore/minimize the window");
+            AddTerm("窗口贴靠到左侧", "Snap the window to the left");
+            AddTerm("窗口贴靠到右侧", "Snap the window to the right");
+            AddTerm("最小化除当前窗口外的所有窗口", "Minimize all windows except the current one");
+            AddTerm("打开贴靠布局", "Open Snap Layouts");
+            AddTerm("开始/停止游戏录制", "Start/stop game recording");
+            AddTerm("录制最近 30 秒", "Record the last 30 seconds");
+            AddTerm("保存游戏截图", "Save a game screenshot");
+            AddTerm("在部分应用里全屏", "Full screen in some apps");
+            AddTerm("切换窗口", "Switch windows");
+            AddTerm("反向切换窗口", "Switch windows in reverse");
+            AddTerm("关闭当前窗口", "Close the current window");
+            AddTerm("按顺序切换窗口", "Cycle through windows in order");
+            AddTerm("打开窗口系统菜单", "Open the window's system menu");
+            AddTerm("截取当前窗口到剪贴板", "Copy the current window to the clipboard");
+            AddTerm("任务管理器", "Task Manager");
+            AddTerm("安全注意序列", "Secure attention sequence");
+            AddTerm("以管理员身份运行", "Run as administrator");
+            AddTerm("打开开始菜单", "Open the Start menu");
+            AddTerm("新建文件夹", "Create a new folder");
+            AddTerm("截取全屏到剪贴板", "Copy the whole screen to the clipboard");
+            AddTerm("切换数字键盘锁定", "Toggle Num Lock");
+            AddTerm("切换滚动锁定", "Toggle Scroll Lock");
+            AddTerm("切换大写锁定", "Toggle Caps Lock");
+        }
+
+        /// <summary>
+        /// 把适配器产出的中文「用途/模块/提示」短语翻译成当前语言（仅英文模式翻译，中文模式原样返回）。
+        /// 支持少量动态模板（前缀式用途、Win+数字 的归属提示）。
+        /// </summary>
+        public static string Term(string zh)
+        {
+            if (string.IsNullOrEmpty(zh) || !IsEnglish) return zh;
+
+            string en;
+            if (Terms.TryGetValue(zh, out en)) return en;
+
+            if (zh.StartsWith("[已禁用] ", StringComparison.Ordinal)) return "[disabled] " + Term(zh.Substring(6));
+            if (zh.StartsWith("重映射 → ", StringComparison.Ordinal)) return "Remap → " + zh.Substring(6);
+            if (zh.StartsWith("运行 ", StringComparison.Ordinal)) return "Run " + zh.Substring(3);
+            if (zh.StartsWith("热键 ", StringComparison.Ordinal)) return "Hotkey " + zh.Substring(3);
+            if (zh.StartsWith("配置集 ", StringComparison.Ordinal)) return "Profile set " + zh.Substring(4);
+            if (zh.StartsWith("切换到超频配置 ", StringComparison.Ordinal)) return "Switch to OC profile " + zh.Substring(8);
+
+            // Win+数字 的归属提示（动态数字）
+            if (zh.StartsWith("启动/切换到任务栏第 ", StringComparison.Ordinal))
+                return "Launch/switch to taskbar app " + TaskbarIndex(zh);
+            if (zh.StartsWith("以管理员身份启动任务栏第 ", StringComparison.Ordinal))
+                return "Launch taskbar app " + TaskbarIndex(zh) + " as administrator";
+            if (zh.StartsWith("打开任务栏第 ", StringComparison.Ordinal))
+            {
+                if (zh.EndsWith("个应用的新实例", StringComparison.Ordinal))
+                    return "Open taskbar app " + TaskbarIndex(zh) + " in a new instance";
+                if (zh.EndsWith("个应用的跳转列表", StringComparison.Ordinal))
+                    return "Open the jump list of taskbar app " + TaskbarIndex(zh);
+            }
+            return zh;
+        }
+
+        private static string TaskbarIndex(string zh)
+        {
+            int i = zh.IndexOf("第 ", StringComparison.Ordinal);
+            if (i < 0) return "";
+            i += 2;
+            int j = zh.IndexOf(" 个应用", i, StringComparison.Ordinal);
+            if (j < 0) j = zh.Length;
+            return zh.Substring(i, j - i).Trim();
+        }
+    }
+}

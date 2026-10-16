@@ -1,0 +1,126 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HotkeyHound 帮助</title>
+<style>
+  body { font-family: 'Microsoft YaHei UI','Microsoft YaHei',Segoe UI,sans-serif; margin: 0; padding: 18px 24px 48px;
+         color: #1b1d21; background: #fff; line-height: 1.7; font-size: 14px; }
+  h1 { font-size: 22px; margin: 6px 0 2px; }
+  h2 { font-size: 17px; margin: 26px 0 8px; padding-bottom: 5px; border-bottom: 2px solid #e2e5ec; }
+  h3 { font-size: 15px; margin: 16px 0 4px; color: #24406b; }
+  p, li { font-size: 14px; }
+  code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; font-family: Consolas, monospace; }
+  pre { background: #1f2430; color: #d8dee9; padding: 10px 12px; border-radius: 6px; overflow: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  th, td { border: 1px solid #dfe3ea; padding: 5px 8px; text-align: left; vertical-align: top; }
+  th { background: #eef1f6; }
+  .note { background: #fff6e5; border: 1px solid #f0d69a; border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
+  .sub { color: #5a6070; font-size: 13px; }
+  ul { margin: 6px 0 6px 22px; padding: 0; }
+</style>
+</head>
+<body>
+<h1>HotkeyHound 帮助</h1>
+<p class="sub">Windows 全局快捷键冲突排查工具。只读取与探测，不修改配置、不写注册表、不结束任何进程。</p>
+
+<h2>1. 这个工具解决什么问题</h2>
+<ul>
+  <li>想设一个全局热键，却提示「已被占用」，但不知道被谁占了。</li>
+  <li>某个键按下去毫无反应，说不清是被别的软件抢了，还是被某个钩子吞了。</li>
+  <li>换电脑 / 装了新软件后一批快捷键行为变了，想找出是哪个软件造成的。</li>
+  <li>想知道某一组键（例如 <code>Ctrl+Alt+F13</code>）到底是不是空着。</li>
+</ul>
+
+<h2>2. 四个引擎</h2>
+
+<h3>引擎 A —— 占用扫描（只读，不需要管理员）</h3>
+<p>对每一种「修饰键组合 × 按键」（约 1650 个）调用 <code>RegisterHotKey</code> 试探：成功立刻
+<code>UnregisterHotKey</code>，记为<b>空闲</b>；失败且错误码为 1409（<code>ERROR_HOTKEY_ALREADY_REGISTERED</code>）
+记为<b>已占用</b>。用法：界面「扫描总览」点「开始扫描」，或 <code>HotkeyHound.exe --scan --report 报告.html</code>。
+<b>风险：几乎为零</b>——不改设置、不写注册表，注册动作在同一瞬间被撤销。</p>
+
+<h3>引擎 B —— 按键归属（需要安装钩子；建议管理员）</h3>
+<p>装一个全局消息钩子（<code>WH_GETMESSAGE</code>，由原生 DLL 实现）拦截 <code>WM_HOTKEY</code>。
+按下全局热键时，持有它的进程会收到消息，钩子把「持有者 PID + 组合键」报回来，于是你就知道这个热键是谁的。
+用法：界面「按键归属」点「开始监听」后按热键，或 <code>HotkeyHound.exe --listen --seconds 30</code>。</p>
+<div class="note"><b>风险：</b>这一项会安装全局钩子并把原生 DLL 注入当前会话的每个进程。
+<b>只有你显式点「开始监听」时才安装</b>，点「停止监听」立刻卸载；加载界面时不会安装任何钩子。
+请尽量以管理员运行，否则看不到提权进程（如以管理员运行的 PowerToys）。</div>
+
+<h3>引擎 C —— 钩子窃取检测（需要安装钩子）</h3>
+<p>装一个低层键盘钩子 <code>WH_KEYBOARD_LL</code> 观察按键是否到达系统，结合引擎 A 占用表与引擎 B 归属报告，
+给出四分支结论：</p>
+<table>
+  <tr><th>结论</th><th>含义</th></tr>
+  <tr><td>正常送达</td><td>按键到达系统，并收到了明确的归属报告</td></tr>
+  <tr><td>疑似被钩子截胡</td><td>按键到了系统，但持有者没收到命令——被某个钩子拦了</td></tr>
+  <tr><td>被上层钩子吞掉</td><td>本程序的钩子根本没看到这个键，说明更上层有钩子把它吞了</td></tr>
+  <tr><td>不是全局热键</td><td>看到了，但引擎 A 里它不是已占用，说明只是当前窗口自己处理的键</td></tr>
+</table>
+<p>用法：界面「钩子检测」页填好组合键点「布防（安装钩子）」（此刻才装钩子），立即按下该键看结论。
+<b>本页只观察、不吞键、不改键，也绝不结束或暂停任何进程。</b></p>
+
+<h3>引擎 D —— 配置聚合（只读，不需要管理员）</h3>
+<p>解析已知软件（PowerToys、Everything、OBS、NVIDIA ShadowPlay、Wallpaper Engine、MSI Afterburner 等）配置里的
+热键声明，与引擎 A 实测结果做 diff，产出「真相表」。跟 <code>--scan</code> / 「开始扫描」自动运行。<b>无风险，只读。</b></p>
+
+<h2>3. 为什么「扫描说空闲」也可能被占用</h2>
+<ul>
+  <li><b>键盘钩子型热键看不到。</b>PowerToys 键盘管理器、AutoHotkey、输入法、部分游戏工具用底层键盘钩子实现热键，
+      不经过 <code>RegisterHotKey</code>，引擎 A 会报成「空闲」，但按下后会被它们抢先处理。</li>
+  <li><b>只有当前会话可见。</b><code>RegisterHotKey</code> 是会话级/窗口站级的，别的登录会话注册的热键探测不到。</li>
+  <li><b>「注册失败」不等于「软件占用」。</b>少数组合会返回 1409 之外的错误码（系统保留或特殊限制），报告里会列出错误码。</li>
+</ul>
+<p>所以引擎 A 说「空闲」只是「没有别人通过 RegisterHotKey 占了它」。要确认按下去到底有没有人响应，请用引擎 B、引擎 C。</p>
+
+<h2>4. 用引擎 B 找出「按了没反应的键」</h2>
+<ol>
+  <li>打开「按键归属」页（或 <code>--listen</code>），点「开始监听」。</li>
+  <li>按下那个键，观察是否出现归属记录。</li>
+  <li><b>出现记录</b>：写明是哪个进程持有了它——就是那个软件抢走了。<br>
+      <b>没有记录</b>：它要么不是全局热键，要么被更上层的钩子吞了；用引擎 C 进一步判断。</li>
+</ol>
+<p>技巧：配合引擎 C 的对照排除工作流——先记录「现在」的结论，退出一个可疑软件，再测一次并对比。</p>
+
+<h2>5. 权限与完整性</h2>
+<ul>
+  <li><b>管理员（UAC）</b>：非管理员看不到「以管理员运行的进程」的热键归属。界面顶部提示条与「扫描总览」页都有
+      「以管理员身份重启」按钮；命令行用 <code>--elevate</code> 提权重启（保留原命令行参数）。
+      用户在 UAC 里点「否」时程序识别为「已取消」并正常返回，不会报错崩溃。</li>
+  <li><b>低完整性（Low IL）</b>：exe 若位于带 <code>Mandatory Label\Low</code> 标签的目录，进程会以低完整性运行——
+      写 <code>%TEMP%</code>/<code>%LOCALAPPDATA%</code> 被拒，UIPI 拦住钩子注入，引擎 B/C 基本失效。
+      <b>请把 exe 复制到普通目录（如 <code>C:\Tools\</code>）后再运行。</b></li>
+  <li><b>UIPI</b>：低完整性或非提权进程无法向更高完整性进程注入钩子，这是 Windows 的安全机制，不是本工具的 bug。</li>
+</ul>
+
+<h2>6. 已知限制</h2>
+<ul>
+  <li><b>看不到 32 位进程</b>：本程序是 64 位、hook DLL 是 x64，覆盖不到 32 位进程的归属。</li>
+  <li><b>钩子型热键不走 WM_HOTKEY</b>：这类热键不会出现在引擎 A 占用表，也不触发引擎 B 归属报告。</li>
+  <li><b>只覆盖当前会话</b>：别的登录会话的热键看不到。</li>
+  <li><b>部分配置编码未验证</b>：MSI Afterburner、Everything 的编码需人工核对。</li>
+  <li><b>引擎 B/C 需要装钩子</b>：设计使然，且只在显式操作时发生。</li>
+</ul>
+
+<h2>7. 常见问题排查</h2>
+<ul>
+  <li><b>扫描不到占用 / 数字偏小？</b>确认没有别的程序在大量注册热键；换到普通目录重跑。</li>
+  <li><b>「开始监听」报错或看不到进程？</b>多半是低完整性（复制到普通目录）或非管理员（提权重启）。</li>
+  <li><b>报告写不进去？</b>把输出路径改到可写目录；低完整性进程写不了 <code>%TEMP%</code>、<code>%LOCALAPPDATA%</code>。</li>
+  <li><b>引擎 A 说空闲但按下去没反应？</b>很可能被钩子型热键占用了，用引擎 B、引擎 C 排查。</li>
+  <li><b>怎么切成英文？</b>命令行加 <code>--lang en</code>，或在本帮助窗口 / 「报告与关于」页切换（重启生效）。</li>
+</ul>
+
+<h2>8. 卸载 / 清理</h2>
+<ul>
+  <li>绿色单文件程序：直接删除 <code>HotkeyHound.exe</code> 即可，无安装程序、不写注册表。</li>
+  <li>程序会在 <code>%LOCALAPPDATA%\HotkeyHound\</code>（或 exe 同目录）释放引擎 B 用的原生 DLL
+      （<code>HotkeyHound.Hook.dll</code>）与 <code>settings.ini</code>，删除该目录即可。</li>
+  <li>引擎 B 的 DLL 会被注入当前会话的进程；这些注入在进程重启后自然消失，<b>重启电脑可彻底清除</b>。
+      停止监听时本程序也会调用 <code>UnhookWindowsHookEx</code> 卸载钩子。</li>
+</ul>
+</body>
+</html>
