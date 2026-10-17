@@ -9,12 +9,32 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location $root
 
-$csc   = 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\Roslyn\csc.exe'
-$fx    = 'C:\Windows\Microsoft.NET\Framework64\v4.0.30319'
-$vcvars = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat'
+# 工具链自动探测：本机装的是 VS 2026 Community，GitHub 的 windows runner 上是 VS 2022，
+# 所以不能写死路径。先按通配符找（覆盖任意版本/任意版本号），找不到再退回 vswhere。
+$vsRoots = @("$env:ProgramFiles\Microsoft Visual Studio", "${env:ProgramFiles(x86)}\Microsoft Visual Studio")
+function Find-Tool([string]$relative) {
+  foreach ($r in $vsRoots) {
+    $hit = Get-ChildItem -Path (Join-Path $r "*\$relative") -ErrorAction SilentlyContinue |
+           Sort-Object FullName -Descending | Select-Object -First 1
+    if ($hit) { return $hit.FullName }
+  }
+  $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+  if (Test-Path $vswhere) {
+    $found = & $vswhere -latest -products * -find $relative 2>$null | Select-Object -First 1
+    if ($found -and (Test-Path $found)) { return $found }
+  }
+  return $null
+}
 
-if (-not (Test-Path $csc)) { throw "找不到 C# 编译器：$csc" }
+$csc    = Find-Tool 'MSBuild\Current\Bin\Roslyn\csc.exe'
+$vcvars = Find-Tool 'VC\Auxiliary\Build\vcvars64.bat'
+$fx     = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
+
+if (-not $csc)    { throw '找不到 Roslyn csc.exe：请安装 Visual Studio（含 .NET 桌面开发工作负载）或 Build Tools' }
+if (-not $vcvars) { throw '找不到 vcvars64.bat：请安装 Visual Studio 的「使用 C++ 的桌面开发」工作负载' }
 if (-not (Test-Path (Join-Path $fx 'mscorlib.dll'))) { throw "找不到 .NET Framework 运行时程序集：$fx" }
+Write-Host ("csc    = " + $csc) -ForegroundColor DarkGray
+Write-Host ("vcvars = " + $vcvars) -ForegroundColor DarkGray
 
 $buildDir = Join-Path $root 'build'
 $distDir  = Join-Path $root 'dist'

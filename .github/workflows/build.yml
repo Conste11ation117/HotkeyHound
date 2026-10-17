@@ -1,0 +1,94 @@
+name: build
+
+# 每次推 main 都验证能构建，推 v* 标签时额外发一个 GitHub Release。
+# 故意不跑 --selftest：其中的 T2/T3/T4 断言的是"这台机器上装了什么"
+# （占用组合数量、PowerToys 配置），在干净的 runner 上必然不成立；
+# 钩子相关的 T6/T7 也不该在 CI 里安装全局钩子。这里只验证"能编译、能扫描、能出报告"。
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        shell: pwsh
+        run: |
+          Write-Host "Runner: $env:IMAGE_OS"
+          Get-Command cl.exe -ErrorAction SilentlyContinue | Out-Null
+          Test-Path "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\mscorlib.dll"
+
+      - name: Build (Roslyn csc + MSVC, no .NET SDK required)
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Smoke test — scan + report in both languages (engines A + D, no hooks)
+        shell: pwsh
+        run: |
+          $exe = "dist\HotkeyHound.exe"
+          if (-not (Test-Path $exe)) { throw "build produced no exe" }
+          & $exe --scan --report out-zh.html
+          if ($LASTEXITCODE -ne 0) { throw "zh scan failed with $LASTEXITCODE" }
+          & $exe --scan --report out-en.html --lang en
+          if ($LASTEXITCODE -ne 0) { throw "en scan failed with $LASTEXITCODE" }
+          foreach ($f in @('out-zh.html', 'out-en.html')) {
+            if (-not (Test-Path $f)) { throw "$f not generated" }
+            if ((Get-Item $f).Length -lt 20000) { throw "$f is suspiciously small" }
+            $text = Get-Content $f -Raw -Encoding UTF8
+            foreach ($anchor in @('#occupancy', '#truth', '#attribution', '#hookcheck', '#advice', '#method')) {
+              if ($text -notmatch [regex]::Escape("id=`"$($anchor.Substring(1))`"")) { throw "$f missing anchor $anchor" }
+            }
+          }
+          $zh = Get-Content out-zh.html -Raw -Encoding UTF8
+          $en = Get-Content out-en.html -Raw -Encoding UTF8
+          if ($zh -notmatch '真相表') { throw "zh report is not Chinese" }
+          if ($en -match '真相表') { throw "en report still contains Chinese section titles" }
+          Write-Host "smoke test OK"
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $name = "HotkeyHound-$env:GITHUB_REF_NAME-win-x64"
+          New-Item -ItemType Directory -Path pkg | Out-Null
+          Copy-Item dist\HotkeyHound.exe pkg\
+          Copy-Item LICENSE, README.md, README.zh-CN.md, CHANGELOG.md, CHANGELOG.zh-CN.md, SECURITY.md pkg\
+          New-Item -ItemType Directory -Path pkg\docs | Out-Null
+          Copy-Item docs\help.zh-CN.md, docs\help.en-US.md pkg\docs\
+          Compress-Archive -Path pkg\* -DestinationPath "$name.zip" -Force
+          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash
+          "$hash  $name.zip" | Out-File SHA256SUMS.txt -Encoding ascii
+          Write-Host "$name.zip built, SHA256 $hash"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HotkeyHound-win-x64
+          path: |
+            HotkeyHound-*.zip
+            SHA256SUMS.txt
+
+      - name: Publish release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $zip = (Get-ChildItem HotkeyHound-*.zip | Select-Object -First 1).Name
+          $notes = "HotkeyHound $tag`n`nSee CHANGELOG.md for details."
+          $existing = gh release view $tag --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "release $tag exists — uploading assets with --clobber"
+            gh release upload $tag $zip SHA256SUMS.txt --clobber
+          } else {
+            gh release create $tag $zip SHA256SUMS.txt --title "HotkeyHound $tag" --generate-notes
+          }
