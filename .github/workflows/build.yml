@@ -38,7 +38,8 @@ jobs:
           if (-not (Test-Path $exe)) { throw "build produced no exe" }
           # 这个 exe 是 GUI 子系统程序：用 & 调用时 PowerShell 既不等它、也不设置
           # $LASTEXITCODE，必须显式 Start-Process -Wait -PassThru 才能拿到退出码。
-          $p = Start-Process -FilePath $exe -ArgumentList '--scan','--report','out-zh.html' -Wait -PassThru -NoNewWindow
+          # 显式指定语言：默认跟随系统区域，而 runner 是 en-US。
+          $p = Start-Process -FilePath $exe -ArgumentList '--scan','--report','out-zh.html','--lang','zh' -Wait -PassThru -NoNewWindow
           if ($p.ExitCode -ne 0) { throw "zh scan failed with $($p.ExitCode)" }
           $p = Start-Process -FilePath $exe -ArgumentList '--scan','--report','out-en.html','--lang','en' -Wait -PassThru -NoNewWindow
           if ($p.ExitCode -ne 0) { throw "en scan failed with $($p.ExitCode)" }
