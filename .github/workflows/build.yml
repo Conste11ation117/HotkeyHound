@@ -34,12 +34,14 @@ jobs:
       - name: Smoke test — scan + report in both languages (engines A + D, no hooks)
         shell: pwsh
         run: |
-          $exe = "dist\HotkeyHound.exe"
+          $exe = (Resolve-Path "dist\HotkeyHound.exe").Path
           if (-not (Test-Path $exe)) { throw "build produced no exe" }
-          & $exe --scan --report out-zh.html
-          if ($LASTEXITCODE -ne 0) { throw "zh scan failed with $LASTEXITCODE" }
-          & $exe --scan --report out-en.html --lang en
-          if ($LASTEXITCODE -ne 0) { throw "en scan failed with $LASTEXITCODE" }
+          # 这个 exe 是 GUI 子系统程序：用 & 调用时 PowerShell 既不等它、也不设置
+          # $LASTEXITCODE，必须显式 Start-Process -Wait -PassThru 才能拿到退出码。
+          $p = Start-Process -FilePath $exe -ArgumentList '--scan','--report','out-zh.html' -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "zh scan failed with $($p.ExitCode)" }
+          $p = Start-Process -FilePath $exe -ArgumentList '--scan','--report','out-en.html','--lang','en' -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "en scan failed with $($p.ExitCode)" }
           foreach ($f in @('out-zh.html', 'out-en.html')) {
             if (-not (Test-Path $f)) { throw "$f not generated" }
             if ((Get-Item $f).Length -lt 20000) { throw "$f is suspiciously small" }
