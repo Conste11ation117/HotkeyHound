@@ -86,12 +86,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = $env:GITHUB_REF_NAME
+          $ver = $tag.TrimStart('v')
           $zip = (Get-ChildItem HotkeyHound-*.zip | Select-Object -First 1).Name
-          $notes = "HotkeyHound $tag`n`nSee CHANGELOG.md for details."
+          # 正文优先从 CHANGELOG 摘对应版本小节（那是给人看的），摘不到才退回自动生成。
+          # 上一版用 --generate-notes 只生成了 compare 链接，Release 正文等于空的。
+          $notes = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          $changelog = Get-Content CHANGELOG.md -Raw -Encoding UTF8
+          $m = [regex]::Match($changelog, '(?ms)^## \[' + [regex]::Escape($ver) + '\].*?(?=^## \[|\z)')
+          if ($m.Success) {
+            $body = $m.Value + "`n### Download`n`n``$zip`` — unzip and run ``HotkeyHound.exe``. No installer, no .NET installation required.`n`nSee SHA256SUMS.txt for the checksum.`n"
+          } else {
+            $body = "See CHANGELOG.md for the notes of $tag.`n"
+          }
+          $body | Out-File $notes -Encoding utf8
           $existing = gh release view $tag --json tagName 2>$null
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "release $tag exists — uploading assets with --clobber"
+            Write-Host "release $tag exists — updating notes and assets"
+            gh release edit $tag --title "HotkeyHound $tag" --notes-file $notes
             gh release upload $tag $zip SHA256SUMS.txt --clobber
           } else {
-            gh release create $tag $zip SHA256SUMS.txt --title "HotkeyHound $tag" --generate-notes
+            gh release create $tag $zip SHA256SUMS.txt --title "HotkeyHound $tag" --notes-file $notes
           }
