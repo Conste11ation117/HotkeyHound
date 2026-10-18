@@ -16,7 +16,9 @@ namespace HotkeyHound.Ui
         private readonly Label _limits;
         private readonly Label _reportInfo;
         private readonly ComboBox _langBox;
+        private readonly ComboBox _themeBox;
         private bool _langInitializing = true;
+        private bool _themeInitializing = true;
 
         public ReportTab(MainForm host)
         {
@@ -24,7 +26,7 @@ namespace HotkeyHound.Ui
 
             var heading = new Label();
             heading.Text = L10n.T("ui.rt.heading");
-            heading.Font = new Font(Font.FontFamily, 15F, FontStyle.Bold);
+            heading.Font = UiTheme.TitleFont(15F);
             heading.Location = new Point(16, 16);
             heading.AutoSize = true;
 
@@ -65,7 +67,7 @@ namespace HotkeyHound.Ui
             _reportInfo = new Label();
             _reportInfo.Location = new Point(18, 92);
             _reportInfo.AutoSize = true;
-            _reportInfo.ForeColor = Color.Gray;
+            _reportInfo.ForeColor = UiTheme.Muted;
             _reportInfo.Text = L10n.T("ui.rt.notGenerated");
 
             // 语言切换：放在「报告与关于」页。切换后提示需要重启（界面文本在启动时已构建）。
@@ -83,8 +85,24 @@ namespace HotkeyHound.Ui
             _langBox.SelectedIndex = L10n.Current == L10n.Chinese ? 0 : 1;
             _langBox.SelectedIndexChanged += OnLanguageChanged;
 
+            // 主题切换：与语言一样写进同一个 settings.ini；WinForms 原生控件换肤不可靠，提示重启。
+            var themeLabel = new Label();
+            themeLabel.Text = L10n.T("ui.rt.themeLabel");
+            themeLabel.Location = new Point(18, 146);
+            themeLabel.AutoSize = true;
+
+            _themeBox = new ComboBox();
+            _themeBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            _themeBox.Location = new Point(150, 142);
+            _themeBox.Width = 200;
+            _themeBox.Items.Add(L10n.T("ui.rt.themeSystem"));
+            _themeBox.Items.Add(L10n.T("ui.rt.themeLight"));
+            _themeBox.Items.Add(L10n.T("ui.rt.themeDark"));
+            _themeBox.SelectedIndex = ThemeIndexOf(UiTheme.Mode);
+            _themeBox.SelectedIndexChanged += OnThemeChanged;
+
             _releaseNote = new Label();
-            _releaseNote.Location = new Point(18, 156);
+            _releaseNote.Location = new Point(18, 184);
             _releaseNote.AutoSize = true;
             _releaseNote.MaximumSize = new Size(1000, 0);
             _releaseNote.Text =
@@ -93,7 +111,7 @@ namespace HotkeyHound.Ui
                        AppInfo.IsAdministrator() ? L10n.T("common.yes") : L10n.T("common.no"));
 
             _limits = new Label();
-            _limits.Location = new Point(18, 250);
+            _limits.Location = new Point(18, 282);
             _limits.AutoSize = true;
             _limits.MaximumSize = new Size(1000, 0);
             _limits.Text = L10n.T("ui.rt.limits");
@@ -106,10 +124,13 @@ namespace HotkeyHound.Ui
             Controls.Add(_reportInfo);
             Controls.Add(langLabel);
             Controls.Add(_langBox);
+            Controls.Add(themeLabel);
+            Controls.Add(_themeBox);
             Controls.Add(_releaseNote);
             Controls.Add(_limits);
 
             _langInitializing = false;
+            _themeInitializing = false;
 
             Resize += delegate (object s, EventArgs e)
             {
@@ -124,6 +145,27 @@ namespace HotkeyHound.Ui
             if (target == L10n.Current) return;
             L10n.SetLanguage(target);
             MessageBox.Show(this, L10n.F("ui.rt.langRestart", L10n.LangDisplay(target)), AppInfo.Title,
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private static int ThemeIndexOf(ThemeMode mode)
+        {
+            switch (mode)
+            {
+                case ThemeMode.Light: return 1;
+                case ThemeMode.Dark: return 2;
+                default: return 0;
+            }
+        }
+
+        private void OnThemeChanged(object sender, EventArgs e)
+        {
+            if (_themeInitializing) return;
+            ThemeMode mode = _themeBox.SelectedIndex == 1 ? ThemeMode.Light
+                            : (_themeBox.SelectedIndex == 2 ? ThemeMode.Dark : ThemeMode.System);
+            if (mode == UiTheme.Mode) return;
+            UiTheme.SetMode(mode);
+            MessageBox.Show(this, L10n.F("ui.rt.themeRestart", UiTheme.ModeName(mode)), AppInfo.Title,
                             MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 

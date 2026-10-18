@@ -121,7 +121,30 @@ HotkeyHound.exe --attribute-all --yes --report 归属报告.html --max 30</code>
 引擎 C（「钩子检测」页）。如果报告建议区出现「按下去没反应？很可能被 X 的钩子吞了」，说明该组合在引擎 A 里
 是空闲的、而 X 有对应的钩子嫌疑——去 X 的设置里改掉它。</p>
 
-<h2>7. 权限与完整性</h2>
+<h2>7. 按键监视怎么用、结论怎么读</h2>
+<p>扫描和归属回答不了「这个键到底在哪一层丢的」。「按键监视」页同时观察三层：</p>
+<ol>
+  <li><b>Raw Input（设备层）</b>：键盘是否把按键送到了 Windows；</li>
+  <li><b>WH_KEYBOARD_LL（钩子链）</b>：按键是否到达本程序的低层键盘钩子；</li>
+  <li><b>窗口消息</b>：本程序窗口是否收到 <code>WM_KEYDOWN</code>/<code>WM_KEYUP</code>（只有本窗口聚焦时才可能）。</li>
+</ol>
+<p>用法：打开「按键监视」→ 点「开始监视（安装键盘钩子）」→ 按下有问题的键 → 看「判定结果」卡片。
+按钮文案写明会安装钩子；点「停止监视」立刻 <code>UnhookWindowsHookEx</code> 并注销 Raw Input。
+<b>页面加载时不会安装任何钩子。</b></p>
+<table>
+  <tr><th>判定</th><th>含义</th><th>建议的下一步</th></tr>
+  <tr><td>设备层就没上来</td><td>Raw Input 根本没见过这个键</td><td>换键盘/接口复测；看下方键盘类驱动清单（只读，不判定、不卸载）</td></tr>
+  <tr><td>钩子链之前被吞</td><td>Raw Input 看到了，低层钩子没看到</td><td>更上游的钩子/驱动（输入法、厂商驱动、宏、远控）在设备层之后、钩子链之前拦截</td></tr>
+  <tr><td>钩子之后被截胡</td><td>Raw + 钩子都有，是全局热键，但引擎 B 没报出持有者</td><td>先到「按键归属」页开始监听再复测；仍无归属就用「钩子检测」的对照排除逐个退出可疑软件</td></tr>
+  <tr><td>已送达</td><td>三层都有；或全局热键拿到了归属</td><td>输入链路正常，问题在接收按键的软件本身</td></tr>
+  <tr><td>无法确定</td><td>是全局热键，但归属引擎没有运行</td><td>这不是「没问题」，是证据不足；开「按键归属」后重测</td></tr>
+</table>
+<p><b>卡住的修饰键</b>：逐个查左右 Ctrl/Alt/Shift/Win 的 <code>GetAsyncKeyState</code>，与钩子看到的状态对照。
+「系统说按着、钩子没看到」也可能只是开始监视前就按住了这个键——松开再按一次即可确认。</p>
+<p><b>重映射与驱动（只读）</b>：<code>Scancode Map</code> 会解析成「按下 X → 系统产生 Y」的列表；
+<code>HKLM\SYSTEM\CurrentControlSet\Services</code> 下符合 <code>Type=1</code>、<code>Start≠4</code>、
+组名/驱动名像键盘类的服务只<b>列出</b>供参考。工具不判定、不停止、不卸载任何驱动。</p>
+<h2>8. 权限与完整性</h2>
 <ul>
   <li><b>管理员（UAC）</b>：非管理员看不到「以管理员运行的进程」的热键归属。界面顶部提示条与「扫描总览」页都有
       「以管理员身份重启」按钮；命令行用 <code>--elevate</code> 提权重启（保留原命令行参数）。
@@ -132,7 +155,7 @@ HotkeyHound.exe --attribute-all --yes --report 归属报告.html --max 30</code>
   <li><b>UIPI</b>：低完整性或非提权进程无法向更高完整性进程注入钩子，这是 Windows 的安全机制，不是本工具的 bug。</li>
 </ul>
 
-<h2>8. 已知限制</h2>
+<h2>9. 已知限制</h2>
 <ul>
   <li><b>看不到 32 位进程</b>：本程序是 64 位、hook DLL 是 x64，覆盖不到 32 位进程的归属。</li>
   <li><b>钩子型热键不走 WM_HOTKEY</b>：这类热键不会出现在引擎 A 占用表，也不触发引擎 B 归属报告。</li>
@@ -141,7 +164,7 @@ HotkeyHound.exe --attribute-all --yes --report 归属报告.html --max 30</code>
   <li><b>引擎 B/C 需要装钩子</b>：设计使然，且只在显式操作时发生。</li>
 </ul>
 
-<h2>9. 常见问题排查</h2>
+<h2>10. 常见问题排查</h2>
 <ul>
   <li><b>扫描不到占用 / 数字偏小？</b>确认没有别的程序在大量注册热键；换到普通目录重跑。</li>
   <li><b>「开始监听」报错或看不到进程？</b>多半是低完整性（复制到普通目录）或非管理员（提权重启）。</li>
@@ -150,7 +173,7 @@ HotkeyHound.exe --attribute-all --yes --report 归属报告.html --max 30</code>
   <li><b>怎么切成英文？</b>命令行加 <code>--lang en</code>，或在本帮助窗口 / 「报告与关于」页切换（重启生效）。</li>
 </ul>
 
-<h2>10. 卸载 / 清理</h2>
+<h2>11. 卸载 / 清理</h2>
 <ul>
   <li>绿色单文件程序：直接删除 <code>HotkeyHound.exe</code> 即可，无安装程序、不写注册表。</li>
   <li>程序会在 <code>%LOCALAPPDATA%\HotkeyHound\</code>（或 exe 同目录）释放引擎 B 用的原生 DLL

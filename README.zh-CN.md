@@ -1,4 +1,4 @@
-# HotkeyHound 快捷键冲突排查器
+﻿# HotkeyHound 快捷键冲突排查器
 
 [English](README.md) · **简体中文**
 
@@ -11,9 +11,11 @@ HotkeyHound 是一个 Windows 全局快捷键冲突排查工具。它回答 Wind
 
 *与 Kimi Code 共同开发。*
 
-![HotkeyHound 五个页面一览](docs/demo.gif)
+**落地页：** <https://conste11ation117.github.io/HotkeyHound/>
 
-*五个页面走一遍：占用扫描 → 按键归属 → 钩子检测 → 配置真相表 → 报告。*
+![HotkeyHound 七个页面一览](docs/demo.gif)
+
+*七个页面走一遍：占用扫描 → 按键归属 → 钩子检测 → 按键监视 → 配置真相表 → 钩子嫌疑 → 报告。*
 
 ---
 
@@ -27,12 +29,12 @@ HotkeyHound 是一个 Windows 全局快捷键冲突排查工具。它回答 Wind
 | 已注册热键的归属 | 靠"屏幕上发生了什么"推断 | 全局钩子 + 模拟按键 | 全局钩子，你手按 | **全局钩子，你手按——或可选的批量自动按** |
 | 被**键盘钩子**吞掉的键 | 只有在按下产生可见变化时才能发现 | 官方承认看不到 | 官方承认看不到 | **专门的检测器 + 配置知识库，带证据等级** |
 | 解释"为什么被占" | 读 PowerToys / ShareX / OBS / AHK 配置 | — | — | **读六类软件，并把用到的配置文件路径印出来** |
-| 按键监视（卡住的修饰键、重映射、过滤驱动） | **有** | — | — | 还没有 |
+| 按键监视（卡住的修饰键、重映射、过滤驱动） | 有 | — | — | **有（1.2.0）** |
 | 32 位进程 | 仅 64 位 | **32 + 64** | 提供 x86/x64 两个版本 | 仅 x64（计划中） |
 | 能拿给别人看的报告 | — | — | — | **自包含 HTML，中英双语** |
 | 许可 | MIT | 闭源 | GPL-3.0 | MIT |
 
-实际意味着：**HotkeyScan 是更全面的"键盘体检工具"**（它的按键监视确实有用），
+实际意味着：**HotkeyScan 是最接近的同侪**——我们正是因为它的按键监视才补上这一块，1.2.0 起已经对齐，
 **Hotkey Screener 对已注册热键的归属最直接**，而 **HotkeyHound 是把"按了没反应"的三种原因分开**的
 那一个——被注册占用、在到达系统之前被钩子吞掉、或者它根本不是全局快捷键——并且**每条结论都给出证据**，
 而不是直接下断言。
@@ -97,6 +99,7 @@ HotkeyHound.exe --listen --seconds 60             # 控制台归属监听（引�
 HotkeyHound.exe --lang en --scan --report en.html # 英文输出
 HotkeyHound.exe --elevate --listen                # 提权重启后再监听
 HotkeyHound.exe --selftest                        # 自测（会装钩子，见下）
+HotkeyHound.exe --monitor --seconds 10            # 按键监视：raw / 钩子 / 窗口三层
 HotkeyHound.exe --selftest --no-hooks             # 不碰钩子的自测
 HotkeyHound.exe --attribute-all --dry-run         # 规划批量归属，一个键都不按
 HotkeyHound.exe --attribute-all --yes             # 逐个按下已占用热键，记录归属
@@ -167,6 +170,8 @@ docs\                     帮助文档（中/英）
 <p align="center">
   <img src="docs/screenshot-overview.png" width="46%" alt="占用扫描：206 个已占用组合、54 条声明、1651 行真相表" />
   <img src="docs/screenshot-truth.png" width="46%" alt="真相表按声明状态分组" />
+  <img src="docs/screenshot-keymonitor.png" width="46%" alt="按键监视：raw input / 低层钩子 / 窗口消息三层" />
+  <img src="docs/screenshot-hooksuspects.png" width="46%" alt="钩子嫌疑清单，带证据等级与配置路径" />
 </p>
 
 ## 文档

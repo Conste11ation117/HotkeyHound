@@ -1,4 +1,4 @@
-# HotkeyHound
+﻿# HotkeyHound
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -12,9 +12,11 @@ holding them*, and *why a key you pressed did nothing at all*.
 
 *Co-developed with Kimi Code.*
 
-![HotkeyHound — a five-page tour](docs/demo.gif)
+**Landing page:** <https://conste11ation117.github.io/HotkeyHound/>
 
-*A five-page tour: occupancy scan → press attribution → hook detection → truth table → report.*
+![HotkeyHound — a seven-page tour](docs/demo.gif)
+
+*A seven-page tour: occupancy scan → press attribution → hook detection → key monitor → truth table → hook suspects → report.*
 
 ---
 
@@ -29,13 +31,13 @@ to be honest — where a competitor does something better, it says so.
 | Name the owner of a registered hotkey | infers it from what changes on screen | global hook + synthetic press | global hook, you press | **global hook, you press — or an opt-in batch press** |
 | Keys eaten by a **keyboard hook** | only when the press causes something visible | documented blind spot | documented blind spot | **dedicated detector + config catalog, with evidence levels** |
 | Explain *why* a combination is taken | reads PowerToys / ShareX / OBS / AHK configs | — | — | **reads six app families, and prints the config path it used** |
-| Key monitor (stuck modifiers, remaps, filter drivers) | **yes** | — | — | not yet |
+| Key monitor (stuck modifiers, remaps, filter drivers) | yes | — | — | **yes (1.2.0)** |
 | 32-bit processes | 64-bit only | **32 + 64** | ships x86 and x64 | x64 only (roadmap) |
 | Report you can hand to someone | — | — | — | **self-contained HTML, bilingual** |
 | Licence | MIT | closed source | GPL-3.0 | MIT |
 
-In practice: **HotkeyScan is the broader keyboard-health toolkit** (its key monitor is genuinely
-useful), **Hotkey Screener is the most direct attributor for registered hotkeys**, and
+In practice: **HotkeyScan is the closest peer** — its key monitor is why we built ours, and since 1.2.0 we match it and add hook-suspect evidence on top.
+**Hotkey Screener is the most direct attributor for registered hotkeys**, and
 **HotkeyHound is the one that separates the three reasons a shortcut does nothing** — claimed by a
 registration, eaten by a hook before it ever reaches the system, or simply not a global shortcut at
 all — and shows its evidence for every conclusion instead of asserting one.
@@ -107,6 +109,7 @@ HotkeyHound.exe --listen --seconds 60             # attribution console (engine 
 HotkeyHound.exe --lang en --scan --report en.html # English output
 HotkeyHound.exe --elevate --listen                # restart as administrator, then listen
 HotkeyHound.exe --selftest                        # self-test (installs hooks; see safety)
+HotkeyHound.exe --monitor --seconds 10            # key monitor: raw input / hook / window layers
 HotkeyHound.exe --selftest --no-hooks             # self-test without touching hooks
 HotkeyHound.exe --attribute-all --dry-run         # plan a batch attribution, press nothing
 HotkeyHound.exe --attribute-all --yes             # press each occupied hotkey, record the owner
@@ -187,6 +190,8 @@ docs\                     help documents (Chinese and English)
 <p align="center">
   <img src="docs/screenshot-overview.png" width="46%" alt="Occupancy scan: 206 occupied combinations, 54 declared, 1651 truth-table rows" />
   <img src="docs/screenshot-truth.png" width="46%" alt="Truth table grouped by declaration status" />
+  <img src="docs/screenshot-keymonitor.png" width="46%" alt="Key monitor: raw input, low-level hook and window message layers" />
+  <img src="docs/screenshot-hooksuspects.png" width="46%" alt="Hook suspects with evidence levels and config paths" />
 </p>
 
 ## Documentation

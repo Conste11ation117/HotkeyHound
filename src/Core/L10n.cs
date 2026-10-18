@@ -111,6 +111,23 @@ namespace HotkeyHound.Core
 
         private static string ReadConfiguredLanguage()
         {
+            string lang = ReadSetting("lang");
+            if (lang == null) lang = ReadSetting("language");
+            return Normalize(lang);
+        }
+
+        private static void WriteConfiguredLanguage(string lang)
+        {
+            WriteSetting("lang", lang);
+        }
+
+        /// <summary>
+        /// 读取 settings.ini 里的一个键（不区分大小写）。语言与主题共用这一套读写，
+        /// 避免出现两套互相覆盖的配置文件逻辑。
+        /// </summary>
+        public static string ReadSetting(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
             try
             {
                 string path = SettingsPath();
@@ -121,26 +138,54 @@ namespace HotkeyHound.Core
                     if (line.Length == 0 || line.StartsWith("#") || line.StartsWith(";")) continue;
                     int eq = line.IndexOf('=');
                     if (eq <= 0) continue;
-                    string key = line.Substring(0, eq).Trim().ToLowerInvariant();
-                    if (key != "lang" && key != "language") continue;
-                    return Normalize(line.Substring(eq + 1).Trim());
+                    string k = line.Substring(0, eq).Trim();
+                    if (!string.Equals(k, key, StringComparison.OrdinalIgnoreCase)) continue;
+                    return line.Substring(eq + 1).Trim();
                 }
             }
             catch (Exception) { }
             return null;
         }
 
-        private static void WriteConfiguredLanguage(string lang)
+        /// <summary>写入 settings.ini 的一个键；保留其它键（例如切换主题不能清掉语言）。</summary>
+        public static bool WriteSetting(string key, string value)
         {
+            if (string.IsNullOrEmpty(key)) return false;
             try
             {
                 string path = SettingsPath();
-                if (path == null) return;
+                if (path == null) return false;
                 string dir = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
-                File.WriteAllText(path, "lang=" + lang + "\r\n", new UTF8Encoding(true));
+
+                var lines = new List<string>();
+                bool replaced = false;
+                if (File.Exists(path))
+                {
+                    foreach (string raw in File.ReadAllLines(path))
+                    {
+                        string line = raw == null ? "" : raw;
+                        string trimmed = line.Trim();
+                        int eq = trimmed.IndexOf('=');
+                        if (eq > 0 && !trimmed.StartsWith("#") && !trimmed.StartsWith(";"))
+                        {
+                            string k = trimmed.Substring(0, eq).Trim();
+                            if (string.Equals(k, key, StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (!replaced) lines.Add(key + "=" + (value ?? ""));
+                                replaced = true;
+                                continue;
+                            }
+                        }
+                        lines.Add(line);
+                    }
+                }
+                if (!replaced) lines.Add(key + "=" + (value ?? ""));
+
+                File.WriteAllText(path, string.Join("\r\n", lines.ToArray()) + "\r\n", new UTF8Encoding(true));
+                return true;
             }
-            catch (Exception) { }
+            catch (Exception) { return false; }
         }
 
         // ------------------------------------------------------------------ 字符串表
@@ -155,6 +200,7 @@ namespace HotkeyHound.Core
             BuildScanLog();
             BuildReport();
             BuildUi();
+            BuildKeyMonitor();
             BuildHelp();
             BuildTerms();
             BuildProbeCatalog();
@@ -263,6 +309,49 @@ namespace HotkeyHound.Core
               "钩子已卸载（UnhookWindowsHookEx 已在引擎停止时调用）。",
               "Hook unloaded (UnhookWindowsHookEx was called when the engine stopped).");
 
+            A("cli.monitor.title", "{0} {1} —— 按键监视（Raw Input + 低层钩子 + 窗口消息）",
+              "{0} {1} — key monitor (raw input + low-level hook + window messages)");
+            A("cli.monitor.meta", "时长：{0} 秒　完整性：{1}　管理员：{2}",
+              "Duration: {0} s  Integrity: {1}  Admin: {2}");
+            A("cli.monitor.startFailed", "按键监视启动失败：{0}", "Failed to start the key monitor: {0}");
+            A("cli.monitor.rawReady", "Raw Input：已注册（窗口 0x{0}，RIDEV_INPUTSINK）",
+              "Raw input: registered (window 0x{0}, RIDEV_INPUTSINK)");
+            A("cli.monitor.rawFailed", "Raw Input：不可用（{0}）", "Raw input: unavailable ({0})");
+            A("cli.monitor.hookReady", "低层键盘钩子：已安装（WH_KEYBOARD_LL，句柄 0x{0}）",
+              "Low-level keyboard hook: installed (WH_KEYBOARD_LL, handle 0x{0})");
+            A("cli.monitor.hookFailed", "低层键盘钩子：安装失败（{0}）", "Low-level keyboard hook: installation failed ({0})");
+            A("cli.monitor.windowNote",
+              "窗口消息层：控制台模式没有本程序窗口，只有图形界面聚焦时才可能收到 WM_KEYDOWN。",
+              "Window-message layer: in console mode there is no HotkeyHound window; WM_KEYDOWN is possible only "
+              + "when the GUI window has focus.");
+            A("cli.monitor.waiting", "请现在按键…（{0} 秒后自动停止；进程不写配置、不改注册表）",
+              "Press keys now… (stops automatically after {0} s; no config or registry is written)");
+            A("cli.monitor.event", "{0}  [{1}]  {2,-14} vk=0x{3:X2} scan=0x{4:X2} flags={5}  {6}",
+              "{0}  [{1}]  {2,-14} vk=0x{3:X2} scan=0x{4:X2} flags={5}  {6}");
+            A("cli.monitor.verdict", "{0}  [判定] {1}：{2}　{3}　{4}",
+              "{0}  [verdict] {1}: {2}  {3}  {4}");
+            A("cli.monitor.summary", "三层事件数：Raw Input {0}　低层钩子 {1}　窗口消息 {2}；判定 {3} 条。",
+              "Layer events: raw input {0}, low-level hook {1}, window messages {2}; verdicts {3}.");
+            A("cli.monitor.noEvents",
+              "本次没有捕获到任何按键。请确认键盘可用，并在监视期间按下要排查的键。",
+              "No key was captured. Make sure the keyboard works and press the key under investigation while "
+              + "monitoring.");
+            A("cli.monitor.unhooked",
+              "按键监视已停止：低层钩子已卸载，Raw Input 已注销。",
+              "Key monitor stopped: the low-level hook was unloaded and raw input was unregistered.");
+            A("cli.monitor.scancodeMap", "Scancode Map（重映射）：{0} 条",
+              "Scancode Map (remaps): {0}");
+            A("cli.monitor.scancodeMapEmpty", "Scancode Map（重映射）：无（注册表中没有该值）",
+              "Scancode Map (remaps): none (the registry value does not exist)");
+            A("cli.monitor.scancodeLine", "  {0} → {1}（0x{2:X2} → 0x{3:X2}）",
+              "  {0} -> {1} (0x{2:X2} -> 0x{3:X2})");
+            A("cli.monitor.drivers", "键盘类过滤驱动（仅供参考，不判定、不卸载）：{0} 个",
+              "Keyboard-class filter drivers (reference only, never judged or unloaded): {0}");
+            A("cli.monitor.driverLine", "  {0}　组={1}　Start={2}　{3}",
+              "  {0}  group={1}  Start={2}  {3}");
+            A("cli.monitor.stuckNone", "卡住的修饰键：无。", "Stuck modifiers: none.");
+            A("cli.monitor.stuckSome", "卡住的修饰键：{0}", "Stuck modifiers: {0}");
+
             A("cli.elevate.already", "当前已经是管理员，无需提权。",
               "Already running as administrator; no elevation needed.");
             A("cli.elevate.requesting", "正在请求以管理员身份重启…", "Requesting restart as administrator…");
@@ -288,6 +377,10 @@ namespace HotkeyHound.Core
               "  HotkeyHound.exe --listen [--seconds N]         Key attribution listener (engine B), N defaults to 30");
             A("cli.help.listenDesc", "                                                 需要管理员才有完整覆盖；用 --elevate 可提权重启",
               "                                                 Administrator gives full coverage; --elevate relaunches elevated");
+            A("cli.help.monitor", "  HotkeyHound.exe --monitor [--seconds N]        按键监视（Raw Input + 低层钩子），N 默认 15 秒",
+              "  HotkeyHound.exe --monitor [--seconds N]        Key monitor (raw input + low-level hook), N defaults to 15");
+            A("cli.help.monitorDesc", "                                                 会安装 WH_KEYBOARD_LL；只观察、不吞键，不结束任何进程",
+              "                                                 Installs WH_KEYBOARD_LL; observes only, never swallows keys or ends processes");
             A("cli.help.selftest", "  HotkeyHound.exe --selftest [--no-hooks]        自测，全部通过退出码 0",
               "  HotkeyHound.exe --selftest [--no-hooks]        Self-test; exit code 0 when all pass");
             A("cli.help.selftestDesc", "                                                 --no-hooks 跳过会安装钩子的 T6/T7",
@@ -298,10 +391,12 @@ namespace HotkeyHound.Core
               "                                                 Choosing No in the UAC prompt cancels safely, no crash");
             A("cli.help.lang", "  HotkeyHound.exe --lang zh|en                   指定界面/报告语言（默认跟随系统区域）",
               "  HotkeyHound.exe --lang zh|en                   Set UI/report language (default follows the system locale)");
+            A("cli.help.theme", "  HotkeyHound.exe --theme system|light|dark     本次运行强制主题（不写入设置；--screenshot 深色验收用）",
+              "  HotkeyHound.exe --theme system|light|dark     Force the theme for this run (not persisted; for dark screenshots)");
             A("cli.help.helper", "  HotkeyHound.exe --helper                       （内部用）辅助进程",
               "  HotkeyHound.exe --helper                       (internal) helper process");
-            A("cli.help.screenshot", "  HotkeyHound.exe --screenshot <目录>            （文档用）渲染五个页面为 PNG 后退出，不装钩子",
-              "  HotkeyHound.exe --screenshot <dir>             (docs) render the five pages to PNG, then exit; installs no hooks");
+            A("cli.help.screenshot", "  HotkeyHound.exe --screenshot <目录>            （文档用）渲染七个页面为 PNG 后退出，不装钩子",
+              "  HotkeyHound.exe --screenshot <dir>             (docs) render the seven pages to PNG, then exit; installs no hooks");
             A("cli.help.help", "  HotkeyHound.exe --help                         显示本帮助",
               "  HotkeyHound.exe --help                         Show this help");
             A("cli.help.notesTitle", "说明：", "Notes:");
@@ -923,21 +1018,24 @@ namespace HotkeyHound.Core
               + "Machine: {4}  User: {5}  Admin: {6}");
             A("ui.rt.limits",
               "已知限制：\r\n"
-              + "· 引擎 B（按键归属）与引擎 C（钩子检测）已实现，但按设计只在「按键归属」页点「开始监听」或"
-              + "「钩子检测」页点「布防」时才安装钩子；程序加载本页不会安装任何钩子。\r\n"
+              + "· 引擎 B（按键归属）、引擎 C（钩子检测）与按键监视按设计只在用户显式点「开始监听」「布防」"
+              + "或「开始监视」时才安装钩子；程序加载页面不会安装任何钩子。\r\n"
               + "· 用键盘钩子实现的热键（PowerToys 键盘管理器、AutoHotkey、输入法）不会占 RegisterHotKey，"
               + "因此引擎 A 会把它们报成「空闲」——报告里靠引擎 D 的配置声明补上。\r\n"
               + "· 非管理员运行时看不到提权进程的热键归属；本程序是 x64，覆盖不到 32 位进程。\r\n"
+              + "· 按键监视只列出键盘类过滤驱动供参考，不判定、不停止、不卸载任何驱动。\r\n"
               + "· 本工具全程只读：不写配置、不改注册表、注册的热键立刻注销。",
               "Known limitations:\r\n"
-              + "· Engines B (attribution) and C (hook detection) are implemented, but by design hooks are "
-              + "installed only when you click Start listening on the Attribution page or Arm on the Hook "
-              + "detection page; simply loading this page installs no hook.\r\n"
+              + "· Engines B (attribution), C (hook detection) and the key monitor install hooks only when "
+              + "the user explicitly clicks Start listening, Arm, or Start monitoring; loading a page installs "
+              + "no hook.\r\n"
               + "· Hotkeys implemented with keyboard hooks (PowerToys Keyboard Manager, AutoHotkey, IMEs) do "
               + "not use RegisterHotKey, so engine A reports them as \"free\" — the report fills the gap with "
               + "engine D's config declarations.\r\n"
               + "· When not run as administrator, attribution for elevated processes is invisible; this "
               + "program is x64 and does not cover 32-bit processes.\r\n"
+              + "· The key monitor lists keyboard-class filter drivers for reference only; it never judges, "
+              + "stops or unloads a driver.\r\n"
               + "· The tool is read-only throughout: it writes no config, does not touch the registry, and "
               + "unregisters hotkeys immediately.");
             A("ui.rt.needScan", "还没有扫描结果，请先到「扫描总览」点「开始扫描」。",
@@ -947,6 +1045,195 @@ namespace HotkeyHound.Core
             A("ui.rt.langLabel", "语言 / Language：", "Language: ");
             A("ui.rt.langRestart", "语言已切换为 {0}，请重启程序后生效。",
               "Language switched to {0}; restart the program for it to take effect.");
+            A("ui.rt.themeLabel", "主题 / Theme：", "Theme: ");
+            A("ui.rt.themeSystem", "跟随系统", "Follow system");
+            A("ui.rt.themeLight", "浅色", "Light");
+            A("ui.rt.themeDark", "深色", "Dark");
+            A("ui.rt.themeRestart", "主题已切换为「{0}」，请重启程序后生效。",
+              "Theme switched to \"{0}\"; restart the program for it to take effect.");
+        }
+
+        /// <summary>
+        /// 按键监视的文案。判定逻辑在 KeyMonitorLogic 里，这里只放中英文字符串，
+        /// 保证 CLI 与界面用同一套说法。
+        /// </summary>
+        private static void BuildKeyMonitor()
+        {
+            A("ui.tab.keymonitor", "按键监视", "Key monitor");
+
+            A("km.layer.raw", "Raw Input", "Raw input");
+            A("km.layer.hook", "低层钩子", "Low-level hook");
+            A("km.layer.window", "窗口消息", "Window message");
+
+            A("km.event.rawDown", "设备层收到按下（Raw Input）", "Press seen at the device layer (raw input)");
+            A("km.event.rawUp", "设备层收到松开（Raw Input）", "Release seen at the device layer (raw input)");
+            A("km.event.hookDown", "到达低层键盘钩子链", "Reached the low-level keyboard hook chain");
+            A("km.event.hookUp", "低层钩子看到松开", "Release seen by the low-level hook");
+            A("km.event.windowDown", "本程序窗口收到按下", "This program's window received the press");
+            A("km.event.windowUp", "本程序窗口收到松开", "This program's window received the release");
+
+            A("km.layers.value", "Raw Input：{0}　低层钩子：{1}　窗口消息：{2}",
+              "Raw input: {0}  low-level hook: {1}  window message: {2}");
+            A("km.layers.yes", "有", "yes");
+            A("km.layers.no", "无", "no");
+
+            A("km.verdict.unknown", "等待判定", "Waiting");
+            A("km.verdict.neverReached", "设备层就没上来", "Never reached the system");
+            A("km.verdict.beforeHook", "钩子链之前被吞", "Swallowed before the hook chain");
+            A("km.verdict.afterHook", "钩子之后被截胡", "Swallowed after the hook chain");
+            A("km.verdict.delivered", "已送达", "Delivered");
+            A("km.verdict.inconclusive", "无法确定", "Inconclusive");
+
+            A("km.decide.never.evidence", "Raw Input 没有看到这个键。",
+              "Raw input never saw this key.");
+            A("km.decide.never.note",
+              "按键没有从设备层到达系统。常见原因：键盘硬件/固件问题、键盘过滤驱动在设备层拦截、"
+              + "或这个键本身坏了。可以先换一个键盘/接口复测，再检查下方列出的键盘类驱动。",
+              "The key never reached the system from the device layer. Common causes: keyboard hardware or "
+              + "firmware problems, a keyboard filter driver intercepting at the device layer, or a broken key. "
+              + "Try another keyboard/port, then review the keyboard-class drivers listed below.");
+            A("km.decide.before.evidence", "Raw Input 看到了，低层键盘钩子没看到。",
+              "Raw input saw it; the low-level keyboard hook did not.");
+            A("km.decide.before.note",
+              "按键离开了设备，但在到达本程序的低层钩子之前就被吞了——机器上有更上游的键盘钩子"
+              + "（输入法、厂商驱动、宏工具、远控软件等）。工具只记录，不结束任何进程。",
+              "The key left the device but was swallowed before reaching this program's low-level hook — "
+              + "something upstream (IME, vendor driver, macro tool, remote-control software) is eating it. "
+              + "This tool only records; it never ends any process.");
+            A("km.decide.delivered.evidence", "三层都看到了这个按键。",
+              "All three layers saw this key.");
+            A("km.decide.delivered.note",
+              "按键从设备层一路到达本程序窗口。如果功能仍然不对，问题在接收按键的软件本身，而不是输入链路。",
+              "The key travelled from the device layer all the way to this program's window. If the function "
+              + "still misbehaves, the problem is in the receiving software, not in the input path.");
+            A("km.decide.foreground.evidence", "Raw Input 与低层钩子看到了，本程序窗口没有收到。",
+              "Raw input and the low-level hook saw it; this program's window did not.");
+            A("km.decide.foreground.note",
+              "这不是全局热键，按键被送到了当时的前台窗口（本程序没有聚焦）。要判断窗口层，请让本程序保持聚焦再按一次。",
+              "This is not a global hotkey; the key went to the foreground window (this program was not focused). "
+              + "Keep this program focused and press again to observe the window-message layer.");
+            A("km.decide.attributed.evidence", "按键到达钩子链，引擎 B 报出了持有者。",
+              "The key reached the hook chain and engine B reported its owner.");
+            A("km.decide.attributed.note",
+              "全局热键已被持有者接收。若功能没有触发，请检查该软件自身的设置。",
+              "The global hotkey was received by its owner. If the function did not fire, check that software's "
+              + "own settings.");
+            A("km.decide.after.evidence", "按键到达钩子链，但全局热键的持有者没有收到归属报告。",
+              "The key reached the hook chain, but the global hotkey's owner did not report receiving it.");
+            A("km.decide.after.note",
+              "按键在低层钩子之后、热键分发之前被截胡（或持有者没有处理 WM_HOTKEY）。"
+              + "可同时开启「按键归属」监听复测；仍无归属时，用「钩子检测」页的对照排除流程逐个退出可疑软件。",
+              "The key was intercepted after the low-level hook but before hotkey dispatch (or the owner ignored "
+              + "WM_HOTKEY). Re-test with Key attribution listening as well; if there is still no owner, use the "
+              + "comparison workflow on the Hook detection page and exit suspect software one by one.");
+            A("km.decide.inconclusive.evidence", "按键到达钩子链，但当前没有运行归属引擎。",
+              "The key reached the hook chain, but the attribution engine is not running.");
+            A("km.decide.inconclusive.note",
+              "这是一个全局热键，但「按键归属」没有在监听，无法判断持有者是否收到。"
+              + "请到「按键归属」页点「开始监听」后重测，才能把「送达」和「被截胡」分开。",
+              "This is a global hotkey, but Key attribution is not listening, so we cannot tell whether the owner "
+              + "received it. Start listening on the Key attribution page and re-test to distinguish "
+              + "\"delivered\" from \"intercepted\".");
+            A("km.decide.owner", "持有者：{0}（PID {1}）。", "Owner: {0} (PID {1}).");
+
+            A("km.mod.ok", "正常", "OK");
+            A("km.mod.osDownHookMissed", "系统说按着，钩子没看到按下", "OS says down; hook saw no press");
+            A("km.mod.hookDownOsMissed", "钩子看到按着，系统说已松开", "Hook says down; OS says released");
+
+            A("km.driver.startBoot", "0 引导", "0 boot");
+            A("km.driver.startSystem", "1 系统", "1 system");
+            A("km.driver.startAuto", "2 自动", "2 auto");
+            A("km.driver.startDemand", "3 按需", "3 demand");
+            A("km.driver.startDisabled", "4 已禁用", "4 disabled");
+            A("km.driver.startOther", "Start={0}", "Start={0}");
+
+            A("km.error.timeout", "按键监视线程未能就绪（超时）", "The key monitor thread did not become ready (timeout)");
+            A("km.error.noLayers", "Raw Input 与低层键盘钩子都没有安装成功", "Neither raw input nor the low-level keyboard hook could be installed");
+            A("km.error.class", "注册 Raw Input 窗口类失败，错误码 {0}", "Failed to register the raw-input window class, error {0}");
+            A("km.error.window", "创建 Raw Input 接收窗口失败，错误码 {0}", "Failed to create the raw-input window, error {0}");
+            A("km.error.raw", "RegisterRawInputDevices 失败，错误码 {0}", "RegisterRawInputDevices failed, error {0}");
+            A("km.error.hook", "SetWindowsHookEx(WH_KEYBOARD_LL) 失败，错误码 {0}",
+              "SetWindowsHookEx(WH_KEYBOARD_LL) failed, error {0}");
+            A("km.error.thread", "按键监视线程异常：{0}", "Key monitor thread exception: {0}");
+            A("km.error.stopTimeout", "警告：按键监视线程在 4 秒内没有退出", "Warning: the key monitor thread did not exit within 4 seconds");
+            A("km.error.attach", "挂接窗口消息失败：{0}", "Failed to attach to window messages: {0}");
+            A("km.log.rawReady", "Raw Input 已注册（窗口 0x{0}，RIDEV_INPUTSINK）",
+              "Raw input registered (window 0x{0}, RIDEV_INPUTSINK)");
+            A("km.log.hookReady", "WH_KEYBOARD_LL 已安装（句柄 0x{0}）", "WH_KEYBOARD_LL installed (handle 0x{0})");
+            A("km.log.hookUnloaded", "已 UnhookWindowsHookEx（WH_KEYBOARD_LL，句柄 0x{0}）",
+              "Called UnhookWindowsHookEx (WH_KEYBOARD_LL, handle 0x{0})");
+            A("km.log.verdict", "{0} → {1}", "{0} -> {1}");
+
+            A("ui.km.title", "按键监视：这个键是键盘坏了、驱动拦了、还是被某个软件吃了？",
+              "Key monitor: is the key broken, blocked by a driver, or eaten by software?");
+            A("ui.km.hint",
+              "三层观察：① Raw Input（设备层）　② WH_KEYBOARD_LL（钩子链）\r\n③ 本程序窗口消息（仅聚焦时）。",
+              "Three layers: raw input, WH_KEYBOARD_LL,\r\nand this window's messages (only while focused).");
+            A("ui.km.start", "开始监视（安装键盘钩子）", "Start monitoring (installs keyboard hook)");
+            A("ui.km.stop", "停止监视（卸载钩子）", "Stop monitoring (unload hook)");
+            A("ui.km.clear", "清空", "Clear");
+            A("ui.km.refresh", "刷新只读信息", "Refresh read-only info");
+            A("ui.km.notStarted", "未开始监视。本页加载时没有安装任何钩子。",
+              "Not monitoring. No hook was installed when this page loaded.");
+            A("ui.km.starting", "正在安装 Raw Input 与低层键盘钩子…", "Installing raw input and the low-level keyboard hook…");
+            A("ui.km.running", "正在监视：Raw Input {0}，低层钩子 {1}。请按键。",
+              "Monitoring: raw input {0}, low-level hook {1}. Press a key.");
+            A("ui.km.stopped", "已停止监视：低层钩子已卸载，Raw Input 已注销。",
+              "Stopped monitoring: the low-level hook was unloaded and raw input was unregistered.");
+            A("ui.km.startFailed", "启动失败：{0}", "Start failed: {0}");
+            A("ui.km.startFailedDetail",
+              "无法启动按键监视：\r\n{0}\r\n\r\nRaw Input 与 WH_KEYBOARD_LL 至少需要一个可用。详见底部日志。",
+              "Cannot start the key monitor:\r\n{0}\r\n\r\nAt least one of raw input and WH_KEYBOARD_LL must be "
+              + "available. See the log at the bottom.");
+            A("ui.km.yes", "可用", "available");
+            A("ui.km.no", "不可用", "unavailable");
+
+            A("ui.km.verdict.title", "判定结果", "Verdict");
+            A("ui.km.verdict.idle", "等待按键…", "Waiting for a key…");
+            A("ui.km.verdict.idleNote",
+              "按键后会在这里显示三层观测结果与结论。",
+              "After a key press, the three-layer observation and the conclusion appear here.");
+            A("ui.km.verdict.key", "按键：{0}", "Key: {0}");
+            A("ui.km.verdict.evidence", "证据：{0}", "Evidence: {0}");
+            A("ui.km.verdict.note", "说明：{0}", "Explanation: {0}");
+            A("ui.km.verdict.owner", "持有者：{0}", "Owner: {0}");
+
+            A("ui.km.mod.title", "卡住的修饰键（GetAsyncKeyState）", "Stuck modifiers (GetAsyncKeyState)");
+            A("ui.km.mod.none", "无：左右 Ctrl/Alt/Shift/Win 的系统状态与钩子观测一致。",
+              "None: the OS state and hook observation agree for left/right Ctrl/Alt/Shift/Win.");
+            A("ui.km.mod.some", "发现 {0} 个异常：{1}", "{0} anomaly(ies): {1}");
+            A("ui.km.mod.note",
+              "「系统说按着、钩子没看到」也可能只是监视开始前就按住了这个键；松开再按一次即可确认。",
+              "\"OS says down, hook saw no press\" may simply mean the key was already held when monitoring "
+              + "started; release and press it again to confirm.");
+
+            A("ui.km.remap.title", "Scancode Map 重映射（只读）", "Scancode Map remaps (read-only)");
+            A("ui.km.remap.input", "按下（输入扫描码）", "Press (input scan code)");
+            A("ui.km.remap.output", "系统产生（输出扫描码）", "System produces (output scan code)");
+            A("ui.km.remap.empty", "注册表里没有 Scancode Map，或没有有效映射。",
+              "No Scancode Map in the registry, or no valid mapping.");
+            A("ui.km.drivers.title", "键盘类过滤驱动（只列出，不判定、不卸载）",
+              "Keyboard-class filter drivers (listed only; never judged or unloaded)");
+            A("ui.km.drivers.name", "驱动 / 服务名", "Driver / service");
+            A("ui.km.drivers.group", "组", "Group");
+            A("ui.km.drivers.start", "启动类型", "Start");
+            A("ui.km.drivers.image", "镜像路径", "Image path");
+            A("ui.km.drivers.empty", "没有发现符合「Type=1、未禁用、键盘类」特征的服务。",
+              "No service matched (Type=1, not disabled, keyboard-class).");
+            A("ui.km.drivers.note",
+              "这里只把可能的键盘类内核驱动列出来供参考——它可能是正常的输入栈组件，也可能是拦截源。"
+              + "本工具不判定、不停止、不卸载任何驱动；要排查请用设备管理器/厂商文档，并先创建还原点。",
+              "This list only shows kernel drivers that look keyboard-related, for reference — they may be normal "
+              + "input-stack components or an interception source. The tool never judges, stops or unloads a "
+              + "driver; investigate with Device Manager/vendor documentation and create a restore point first.");
+
+            A("ui.km.col.time", "时间", "Time");
+            A("ui.km.col.layer", "层级", "Layer");
+            A("ui.km.col.key", "键", "Key");
+            A("ui.km.col.scancode", "扫描码", "Scan code");
+            A("ui.km.col.flags", "事件标志", "Flags");
+            A("ui.km.col.desc", "说明", "Description");
+            A("ui.km.cleared", "已清空本页事件与判定。", "Cleared this page's events and verdicts.");
         }
 
         private static void BuildHelp()

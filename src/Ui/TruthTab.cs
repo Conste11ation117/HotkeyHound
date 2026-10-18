@@ -49,13 +49,14 @@ namespace HotkeyHound.Ui
             _counter = new Label();
             _counter.Location = new Point(352, 10);
             _counter.AutoSize = true;
-            _counter.ForeColor = Color.Gray;
+            _counter.ForeColor = UiTheme.Muted;
 
             _explain = new Label();
             _explain.Location = new Point(2, 36);
-            _explain.Size = new Size(1000, 30);
+            _explain.Size = new Size(100, 30);
+            _explain.AutoSize = false;
             _explain.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            _explain.ForeColor = Color.DimGray;
+            _explain.ForeColor = UiTheme.Muted;
             _explain.Text = L10n.T("ui.truth.explain");
 
             top.Controls.Add(label);
@@ -142,10 +143,10 @@ namespace HotkeyHound.Ui
                     item.Tag = r;
                     switch (r.Kind)
                     {
-                        case TruthKind.MatchesDeclared: item.ForeColor = Color.FromArgb(20, 110, 40); break;
-                        case TruthKind.RegisteredButUnowned: item.ForeColor = Color.FromArgb(150, 40, 30); break;
-                        case TruthKind.DeclaredButNotRegistered: item.ForeColor = Color.FromArgb(160, 100, 10); break;
-                        default: item.ForeColor = Color.Gray; break;
+                        case TruthKind.MatchesDeclared: item.ForeColor = UiTheme.Success; break;
+                        case TruthKind.RegisteredButUnowned: item.ForeColor = UiTheme.Error; break;
+                        case TruthKind.DeclaredButNotRegistered: item.ForeColor = UiTheme.Warning; break;
+                        default: item.ForeColor = UiTheme.Muted; break;
                     }
                     _list.Items.Add(item);
                     shown++;

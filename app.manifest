@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
-  <assemblyIdentity version="1.0.0.0" name="HotkeyHound.app" />
+  <assemblyIdentity version="1.2.0.0" name="HotkeyHound.app" />
 
   <!-- 不自动提权：默认以当前用户身份运行，提权走 ShellExecuteEx + runas（见 Elevation.cs）。 -->
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">

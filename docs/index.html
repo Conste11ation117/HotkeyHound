@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HotkeyHound — 查清楚是谁偷走了你的快捷键</title>
+<meta name="description" content="HotkeyHound is a Windows tool for diagnosing global hotkey conflicts: enumerate occupied combinations, attribute keys to processes, and detect hotkeys swallowed by keyboard hooks.">
+<meta name="keywords" content="hotkey conflict, hotkey already registered, who stole my hotkey, global hotkey, keyboard hook, Windows, PowerToys">
+<meta property="og:title" content="HotkeyHound — find out who stole your keyboard shortcut">
+<meta property="og:description" content="Enumerate occupied combinations, attribute hotkeys to processes, and detect keys swallowed by keyboard hooks. MIT, single executable.">
+<meta property="og:image" content="screenshot-overview.png">
+<link rel="icon" href="data:,">
+<style>
+  :root{
+    --bg:#0f1115; --panel:#161a21; --panel2:#1c2129; --text:#e7eaf0; --muted:#9aa4b2;
+    --line:#272d38; --accent:#5aa9ff; --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f6f8fb; --panel:#ffffff; --panel2:#f0f3f8; --text:#141922; --muted:#5b6675;
+           --line:#dfe5ee; --accent:#0b62c4; --ok:#0f8a5f; --warn:#a86b00; --bad:#c02b2b; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:16px/1.65 "Segoe UI","Microsoft YaHei UI","PingFang SC",system-ui,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:980px;margin:0 auto;padding:0 22px}
+  header{padding:72px 0 40px;text-align:center}
+  h1{font-size:44px;line-height:1.15;margin:0 0 12px;letter-spacing:-.5px}
+  h1 span{color:var(--accent)}
+  .tag{font-size:20px;color:var(--muted);margin:0 auto 26px;max-width:640px}
+  .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:18px}
+  .btn{display:inline-block;padding:11px 22px;border-radius:10px;border:1px solid var(--line);
+       background:var(--panel);color:var(--text);font-weight:600}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn:hover{text-decoration:none;filter:brightness(1.08)}
+  .small{font-size:14px;color:var(--muted)}
+  .shot{width:100%;border-radius:14px;border:1px solid var(--line);margin:34px 0 10px;display:block}
+  section{padding:38px 0;border-top:1px solid var(--line)}
+  h2{font-size:26px;margin:0 0 6px;letter-spacing:-.2px}
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .card h3{margin:0 0 6px;font-size:17px}
+  .card p{margin:0;color:var(--muted);font-size:15px}
+  code{font-family:var(--mono);font-size:13.5px;background:var(--panel2);padding:2px 6px;border-radius:6px}
+  pre{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+      overflow:auto;font-family:var(--mono);font-size:13.5px;line-height:1.7}
+  table{width:100%;border-collapse:collapse;margin-top:16px;font-size:15px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600}
+  td.yes{color:var(--ok);font-weight:600}
+  td.no{color:var(--muted)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12.5px;
+        border:1px solid var(--line);color:var(--muted);margin-right:6px}
+  .pill.ok{color:var(--ok);border-color:var(--ok)}
+  .pill.warn{color:var(--warn);border-color:var(--warn)}
+  .two{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+  .two img{width:100%;border-radius:12px;border:1px solid var(--line)}
+  ul{color:var(--muted)}
+  footer{padding:34px 0 60px;color:var(--muted);font-size:14px;text-align:center}
+  .lang{position:fixed;top:14px;right:16px;display:flex;gap:6px;z-index:9}
+  .lang button{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+               border-radius:8px;padding:5px 10px;font-size:13px;cursor:pointer}
+  .lang button.on{color:var(--text);border-color:var(--accent)}
+  .zh,.en{display:none}
+  body[data-lang="zh"] .zh{display:block}
+  body[data-lang="en"] .en{display:block}
+  body[data-lang="zh"] span.zh,body[data-lang="en"] span.en{display:inline}
+  @media (max-width:640px){ h1{font-size:32px} .tag{font-size:17px} }
+</style>
+</head>
+<body data-lang="zh">
+<div class="lang">
+  <button id="btn-zh" class="on" onclick="setLang('zh')">中文</button>
+  <button id="btn-en" onclick="setLang('en')">English</button>
+</div>
+
+<header class="wrap">
+  <h1>Hotkey<span>Hound</span></h1>
+  <p class="tag zh">查清楚是谁偷走了你的快捷键——并且拿出证据。</p>
+  <p class="tag en">Find out who stole your keyboard shortcut — and prove it.</p>
+  <div class="cta">
+    <a class="btn primary zh" href="https://github.com/Conste11ation117/HotkeyHound/releases/latest">下载最新版（免安装）</a>
+    <a class="btn primary en" href="https://github.com/Conste11ation117/HotkeyHound/releases/latest">Download (no installer)</a>
+    <a class="btn" href="https://github.com/Conste11ation117/HotkeyHound">GitHub</a>
+    <a class="btn zh" href="https://github.com/Conste11ation117/HotkeyHound/blob/main/docs/help.zh-CN.md">文档</a>
+    <a class="btn en" href="https://github.com/Conste11ation117/HotkeyHound/blob/main/docs/help.en-US.md">Docs</a>
+  </div>
+  <p class="small zh">单文件可执行、无需安装 .NET（Win10/11 自带 4.8）· MIT 开源 · 中英双语</p>
+  <p class="small en">One executable, no .NET install needed (Windows 10/11 ship 4.8) · MIT · bilingual</p>
+  <img class="shot" src="demo.gif" alt="HotkeyHound — five-page tour">
+</header>
+
+<section class="wrap">
+  <h2 class="zh">一个键按下去没反应，其实只有三种原因</h2>
+  <h2 class="en">A shortcut that does nothing has three causes</h2>
+  <div class="grid">
+    <div class="card">
+      <h3><span class="pill warn">已占用 / Taken</span></h3>
+      <p class="zh">某个程序的 <code>RegisterHotKey</code> 先注册了它。HotkeyHound 逐一试探全部约 1650 个组合，报出哪些已被占用。</p>
+      <p class="en">Some application got there first with <code>RegisterHotKey</code>. HotkeyHound probes all ~1650 combinations and reports which are taken.</p>
+    </div>
+    <div class="card">
+      <h3><span class="pill warn">被吞掉 / Swallowed</span></h3>
+      <p class="zh">按键在到达系统之前被键盘钩子吃掉（PowerToys 键盘管理器、输入法、宏工具）。这类热键<b>永远不注册</b>，扫描看不见——所以我们专门检测它。</p>
+      <p class="en">A keyboard hook eats the key before it reaches Windows (PowerToys Keyboard Manager, input methods, macro tools). Those never register, so a scan cannot see them — so we detect them directly.</p>
+    </div>
+    <div class="card">
+      <h3><span class="pill ok">根本不是全局键 / Not global</span></h3>
+      <p class="zh">组合本来就空闲，问题在别处（软件本身、游戏内绑定、键盘硬件）。知道"没人占用"本身就是有效结论。</p>
+      <p class="en">The combination is free and the problem is elsewhere (the app itself, an in-game binding, the keyboard). Knowing that is already an answer.</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2 class="zh">四层证据，而不是一句断言</h2>
+  <h2 class="en">Four layers of evidence, not an assertion</h2>
+  <div class="grid">
+    <div class="card"><h3>A · 占用扫描</h3><p class="zh">约 1650 个组合逐一 <code>RegisterHotKey</code> 试探，成功即刻注销，零副作用。</p><p class="en">~1650 combinations probed with <code>RegisterHotKey</code>, released in the same instant. No side effects.</p></div>
+    <div class="card"><h3>B · 按键归属</h3><p class="zh">注入原生钩子，报出是哪个进程收到了热键；也可选中批量自动归属（默认 dry-run）。</p><p class="en">A native hook reports which process received the hotkey; opt-in batch attribution available (dry-run by default).</p></div>
+    <div class="card"><h3>C · 钩子吞噬检测</h3><p class="zh">低层键盘钩子 + 四分支判定，区分"没到系统""到了但没送达""已确认送达"。</p><p class="en">Low-level hook plus a four-way verdict: never reached the system / reached it but not delivered / delivered.</p></div>
+    <div class="card"><h3>D · 钩子嫌疑知识库</h3><p class="zh">读 PowerToys、输入法、QQ/微信、AutoHotkey、厂商工具等的配置，给出带<b>证据等级</b>的嫌疑清单与配置路径。</p><p class="en">Reads configs of PowerToys, input methods, QQ/WeChat, AutoHotkey, vendor utilities — suspects carry an <b>evidence level</b> and the config path.</p></div>
+  </div>
+</section>
+
+<section class="wrap">
+  <h2 class="zh">跟其它工具比（诚实版）</h2>
+  <h2 class="en">How it compares (honestly)</h2>
+  <table>
+    <tr><th></th><th>HotkeyScan</th><th>Hotkey Screener</th><th>Hotkey Detective</th><th>HotkeyHound</th></tr>
+    <tr><td>列出已占用组合</td><td>761</td><td>已注册项</td><td class="no">—</td><td class="yes">1650</td></tr>
+    <tr><td>已注册热键的归属</td><td>屏幕变化推断</td><td>钩子+模拟按键</td><td>钩子，你手按</td><td class="yes">钩子，你手按 / 可选批量</td></tr>
+    <tr><td>被钩子吞掉的键</td><td>仅当有可见变化</td><td class="no">官方承认看不到</td><td class="no">官方承认看不到</td><td class="yes">专门检测 + 知识库</td></tr>
+    <tr><td>解释"为什么被占"</td><td>读四类配置</td><td class="no">—</td><td class="no">—</td><td class="yes">六类软件 + 配置路径</td></tr>
+    <tr><td>按键监视（卡住的修饰键/重映射/驱动）</td><td class="yes">有</td><td class="no">—</td><td class="no">—</td><td>1.2.0 起有</td></tr>
+    <tr><td>32 位进程</td><td>仅 64</td><td class="yes">32+64</td><td>x86/x64</td><td>仅 64（计划中）</td></tr>
+    <tr><td>可交给别人的报告</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">自包含 HTML，双语</td></tr>
+  </table>
+  <p class="small zh">我们不是"最强"，而是"最可解释"：每条结论都带证据等级与来源。钩子型与应用内快捷键任何工具都列不全——Windows 不把它们放进任何表里。</p>
+  <p class="small en">Not "the best" — the most explainable: every conclusion carries an evidence level and its source. No tool can list hook-based or in-app shortcuts, because Windows keeps them out of every table.</p>
+</section>
+
+<section class="wrap">
+  <h2 class="zh">截图</h2><h2 class="en">Screenshots</h2>
+  <div class="two">
+    <img src="screenshot-overview.png" alt="占用扫描">
+    <img src="screenshot-truth.png" alt="配置真相表">
+  </div>
+</section>
+
+<section class="wrap">
+  <h2 class="zh">命令行也完整</h2><h2 class="en">A complete command line too</h2>
+  <pre>HotkeyHound.exe --scan --report out.html          # engines A + D → HTML report
+HotkeyHound.exe --listen --seconds 60             # attribution console (engine B)
+HotkeyHound.exe --attribute-all --dry-run         # plan batch attribution, press nothing
+HotkeyHound.exe --monitor --seconds 10            # key monitor: raw / hook / window layers
+HotkeyHound.exe --selftest --no-hooks             # self-test without touching hooks
+HotkeyHound.exe --lang en --scan --report en.html # English output</pre>
+</section>
+
+<section class="wrap">
+  <h2 class="zh">安全模型</h2><h2 class="en">Safety model</h2>
+  <ul class="zh">
+    <li>引擎 A / D 只读：注册热键后立即注销，绝不修改配置或注册表。</li>
+    <li>钩子<b>只在你点按钮时</b>安装；钩子过程只观察、一律放行，绝不吞键、不改键。</li>
+    <li>绝不结束或暂停任何进程；对照排除由你自己动手。</li>
+    <li>没有网络代码。一次钩子会话结束后，注入的 DLL 会在相关进程退出时卸载，重启即彻底清除。</li>
+  </ul>
+  <ul class="en">
+    <li>Engines A/D are read-only: hotkeys are registered and released in the same instant; no config or registry is touched.</li>
+    <li>Hooks are installed <b>only when you press the button</b>; the hook procedure observes and always passes the event through.</li>
+    <li>No process is ever terminated or suspended. The comparison workflow asks you to quit the suspect app yourself.</li>
+    <li>No network code. Injected DLLs unload when those processes exit; a reboot clears them completely.</li>
+  </ul>
+</section>
+
+<footer class="wrap">
+  <p>MIT © 2026 @Conste11ation117 · <a href="https://github.com/Conste11ation117/HotkeyHound">GitHub</a> ·
+     <a href="https://github.com/Conste11ation117/HotkeyHound/blob/main/CHANGELOG.md">Changelog</a> ·
+     <a href="https://github.com/Conste11ation117/HotkeyHound/blob/main/SECURITY.md">Security</a></p>
+</footer>
+
+<script>
+  function setLang(l){
+    document.body.dataset.lang = l;
+    document.documentElement.lang = (l === 'zh') ? 'zh-CN' : 'en';
+    document.getElementById('btn-zh').className = (l === 'zh') ? 'on' : '';
+    document.getElementById('btn-en').className = (l === 'en') ? 'on' : '';
+    try { localStorage.setItem('hh-lang', l); } catch (e) {}
+  }
+  try {
+    var saved = localStorage.getItem('hh-lang');
+    if (saved) setLang(saved);
+    else if (!/^zh/i.test(navigator.language || 'zh')) setLang('en');
+  } catch (e) {}
+</script>
+</body>
+</html>

@@ -31,15 +31,16 @@ namespace HotkeyHound.Ui
 
             var title = new Label();
             title.Text = L10n.T("ui.hs.title");
-            title.Font = new Font(Font.FontFamily, 11F, FontStyle.Bold);
+            title.Font = UiTheme.TitleFont(11F);
             title.Location = new Point(0, 4);
             title.AutoSize = true;
 
             var hint = new Label();
             hint.Location = new Point(2, 30);
-            hint.Size = new Size(1010, 56);
+            hint.Size = new Size(100, 56);
+            hint.AutoSize = false;
             hint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            hint.ForeColor = Color.DimGray;
+            hint.ForeColor = UiTheme.Muted;
             hint.Text = L10n.T("ui.hs.hint") + "\r\n" + L10n.T("ui.hs.levels");
 
             _filter = new ComboBox();
@@ -61,7 +62,7 @@ namespace HotkeyHound.Ui
             _counter = new Label();
             _counter.Location = new Point(212, 100);
             _counter.AutoSize = true;
-            _counter.ForeColor = Color.Gray;
+            _counter.ForeColor = UiTheme.Muted;
 
             _openButton = new Button();
             _openButton.Text = L10n.T("ui.hs.openConfig");
@@ -141,10 +142,10 @@ namespace HotkeyHound.Ui
                     item.Tag = r;
                     switch (r.Evidence)
                     {
-                        case HookEvidence.Confirmed: item.ForeColor = Color.FromArgb(20, 110, 40); break;
-                        case HookEvidence.HighlySuspected: item.ForeColor = Color.FromArgb(150, 40, 30); break;
-                        case HookEvidence.KnownDefault: item.ForeColor = Color.FromArgb(160, 100, 10); break;
-                        default: item.ForeColor = Color.Gray; break;
+                        case HookEvidence.Confirmed: item.ForeColor = UiTheme.Success; break;
+                        case HookEvidence.HighlySuspected: item.ForeColor = UiTheme.Error; break;
+                        case HookEvidence.KnownDefault: item.ForeColor = UiTheme.Warning; break;
+                        default: item.ForeColor = UiTheme.Muted; break;
                     }
                     _list.Items.Add(item);
                     shown++;

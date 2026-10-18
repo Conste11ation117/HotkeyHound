@@ -4,6 +4,60 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-10-18 Sentinel
+
+### Added: the key monitor (seventh tab, `--monitor`)
+
+HotkeyScan's **Key monitor** was the one place where this project clearly lagged. A scan answers "who
+registered this combination", attribution answers "who received it", but neither answers the question
+users actually ask when a key does nothing: **is the keyboard broken, is a driver filtering it, or is
+some software eating it?** This release observes the same keystroke at three layers, each with its own
+timestamp, virtual-key code, scan code and event flags:
+
+1. **Raw Input** (`RegisterRawInputDevices` with `RIDEV_INPUTSINK`, `usUsagePage=0x01, usUsage=0x06`,
+   `WM_INPUT`) — did the key leave the device and reach Windows?
+2. **`WH_KEYBOARD_LL`** — did the key reach this program's low-level keyboard hook?
+3. **Window messages** — did this program's window receive `WM_KEYDOWN`/`WM_KEYUP` (only possible while
+   it has focus).
+
+`KeyMonitorLogic` is a pure function so the four verdicts are unit-testable: **never reached the system**
+(no raw input → hardware/firmware/filter driver), **swallowed before the hook chain** (raw but no hook),
+**swallowed after the hook chain** (raw + hook, a global hotkey, but engine B reported no owner), and
+**delivered** (all three layers, or a global hotkey with a confirmed owner). If the combination is a
+global hotkey but attribution is not listening, the verdict is honestly **inconclusive** instead of
+pretending the missing owner is proof of interception. The page also compares left/right
+Ctrl/Alt/Shift/Win from `GetAsyncKeyState` against what the hook saw, to surface stuck modifiers.
+
+### Read-only: remaps and filter drivers, never unloaded
+
+The monitor parses `HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layout\Scancode Map` into human-readable
+"press X → system produces Y" rows, and lists keyboard-class filter drivers (`Type=1`, `Start≠4`,
+keyboard-like group/driver name). It deliberately **only lists** them. A driver in that list is not proof
+of interception — `kbdclass.sys`, `kbdhid.sys` and `i8042prt.sys` are the normal input stack. Stopping or
+unloading a keyboard driver can break input for the whole session or bugcheck the machine, and this tool's
+contract is read-only: no configuration writes, no registry changes, no process or driver termination.
+The list is evidence to discuss with Device Manager or vendor documentation, not an action list.
+
+### UI: dark mode, one palette, a real icon
+
+- The app follows the system theme (`HKCU\...\Themes\Personalize\AppsUseLightTheme`) and adds a
+  **System / Light / Dark** switch on the Report & about page, persisted next to the language in
+  `%LOCALAPPDATA%\HotkeyHound\settings.ini` (restart applies it).
+- Colours, fonts and spacing now come from `src/Ui/UiTheme.cs`; pages no longer hard-code colours.
+  Truth-table, hook-suspect and attribution rows are tinted by status using the palette's
+  success/warning/error colours.
+- A generated 256×256 icon (`assets/hotkeyhound.ico`, magnifier + key outline) is embedded with
+  `/win32icon:` and used as the window icon. `--screenshot` renders all **seven** pages, in both light
+  and dark themes.
+
+### Tests and docs
+
+- Self-test gains **T9**: the four verdict branches, the extra delivered/inconclusive/not-global semantics,
+  a constructed `Scancode Map` sample (including an `E0` extended scan code), and stuck-modifier states.
+  T9 installs no hooks and runs under `--no-hooks`.
+- Help documents (zh/en, Markdown and HTML) gain a "how to use the key monitor and read its verdicts"
+  section. README is intentionally unchanged in this release.
+
 ## [1.1.0] — 2026-10-17 Tracker
 
 ### Added: auto-attribution (engines A x B)

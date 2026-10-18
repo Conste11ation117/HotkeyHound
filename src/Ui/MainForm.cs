@@ -24,6 +24,7 @@ namespace HotkeyHound.Ui
         private ReportTab _reportTab;
         private AttributionTab _attributionTab;
         private HookCheckTab _hookCheckTab;
+        private KeyMonitorTab _keyMonitorTab;
         private HookSuspectsTab _hookSuspectsTab;
         private Panel _banner;
 
@@ -35,7 +36,7 @@ namespace HotkeyHound.Ui
         public event Action SnapshotChanged;
 
         /// <summary>
-        /// 文档截图模式：跑一次扫描，把五个页面逐页渲染成 PNG，然后退出。
+        /// 文档截图模式：跑一次扫描，把七个页面逐页渲染成 PNG，然后退出。
         /// 用 DrawToBitmap 渲染，不需要窗口在前台，也**不安装任何钩子**。
         /// </summary>
         public MainForm(string screenshotDir)
@@ -50,36 +51,65 @@ namespace HotkeyHound.Ui
 
         private readonly string _screenshotDir;
 
+        /// <summary>截图模式没有控制台，把关键步骤写进目标目录，失败时能查原因。</summary>
+        private static void ScreenshotTrace(string dir, string message)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(dir)) return;
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.AppendAllText(System.IO.Path.Combine(dir, "screenshot.log"),
+                    DateTime.Now.ToString("HH:mm:ss.fff") + "  " + message + "\r\n",
+                    new System.Text.UTF8Encoding(true));
+            }
+            catch (Exception) { }
+        }
+
         private void OnScreenshotShown(object sender, EventArgs e)
         {
+            ScreenshotTrace(_screenshotDir, "窗口已显示，开始扫描");
             StartScan(delegate (int done, int total) { }, delegate (ScanSnapshot snapshot, Exception error)
             {
-                var timer = new System.Windows.Forms.Timer();
-                timer.Interval = 500;
-                timer.Tick += delegate (object s2, EventArgs e2)
+                ScreenshotTrace(_screenshotDir, "扫描结束：" + (error == null ? "成功" : error.ToString()));
+                // 直接在 UI 线程上截：CapturePages 内部逐页 DoEvents，不再依赖 WinForms Timer
+                //（Timer 只被局部变量引用时可能在第一次 Tick 前就被回收）。
+                try
                 {
-                    timer.Stop();
-                    try { CapturePages(_screenshotDir); }
-                    catch (Exception ex) { Log.Write("截图模式失败：" + ex.Message); }
-                    Close();
-                };
-                timer.Start();
+                    CapturePages(_screenshotDir);
+                    ScreenshotTrace(_screenshotDir, "截图完成");
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("截图模式失败：" + ex.Message);
+                    ScreenshotTrace(_screenshotDir, "截图失败：" + ex);
+                }
+                Close();
             });
         }
 
         private void CapturePages(string dir)
         {
             System.IO.Directory.CreateDirectory(dir);
-            string[] names = new string[] { "01-overview", "02-attribution", "03-hookcheck", "04-truth", "05-hooksuspects", "06-report" };
+            ScreenshotTrace(dir, "标签页数：" + (_tabs == null ? -1 : _tabs.TabPages.Count)
+                + "，窗口尺寸：" + ClientSize.Width + "x" + ClientSize.Height);
+            string[] names = new string[]
+            {
+                "01-overview", "02-attribution", "03-hookcheck", "04-keymonitor",
+                "05-truth", "06-hooksuspects", "07-report"
+            };
             for (int i = 0; i < _tabs.TabPages.Count && i < names.Length; i++)
             {
                 _tabs.SelectedIndex = i;
                 Application.DoEvents();
                 System.Threading.Thread.Sleep(400);
                 Application.DoEvents();
-                using (var bmp = new Bitmap(ClientSize.Width, ClientSize.Height))
+                int w = ClientSize.Width;
+                int h = ClientSize.Height;
+                ScreenshotTrace(dir, "渲染 " + names[i] + "（标签页 " + i + "，尺寸 " + w + "x" + h + "）");
+                if (w <= 0 || h <= 0) break;
+                using (var bmp = new Bitmap(w, h))
                 {
-                    DrawToBitmap(bmp, new Rectangle(0, 0, ClientSize.Width, ClientSize.Height));
+                    DrawToBitmap(bmp, new Rectangle(0, 0, w, h));
                     bmp.Save(System.IO.Path.Combine(dir, names[i] + ".png"), System.Drawing.Imaging.ImageFormat.Png);
                 }
                 Log.Write("已渲染 " + names[i] + ".png");
@@ -88,10 +118,11 @@ namespace HotkeyHound.Ui
 
         public MainForm()
         {
+            UiTheme.EnsureInitialized();
             Log = new LogSink();
             Log.LineAdded += OnLogLine;
 
-            // 构造引擎对象本身不碰钩子；钩子只在用户点「开始监听」/「布防」时才安装。
+            // 构造引擎对象本身不碰钩子；钩子只在用户点「开始监听」/「布防」/「开始监视」时才安装。
             _attribution = new AttributionEngine();
             _sniffer = new HookSniffer();
             _attribution.Logged += OnEngineLog;
@@ -105,9 +136,11 @@ namespace HotkeyHound.Ui
             MinimumSize = new Size(760, 520);
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
+            BackColor = UiTheme.Background;
+            ForeColor = UiTheme.Text;
             try { UiTheme.ApplyFont(this); }
             catch (Exception) { }
-            try { Icon = SystemIcons.Application; }
+            try { Icon = UiTheme.LoadAppIcon(); }
             catch (Exception) { }
         }
 
@@ -212,19 +245,21 @@ namespace HotkeyHound.Ui
             split.Panel2MinSize = 90;
             split.FixedPanel = FixedPanel.Panel2;
 
-            _tabs = new TabControl();
+            _tabs = new ThemedTabControl();
             _tabs.Dock = DockStyle.Fill;
 
             _overviewTab = new OverviewTab(this);
             _truthTab = new TruthTab(this);
             _attributionTab = new AttributionTab(this);
             _hookCheckTab = new HookCheckTab(this);
+            _keyMonitorTab = new KeyMonitorTab(this);
             _hookSuspectsTab = new HookSuspectsTab(this);
             _reportTab = new ReportTab(this);
 
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.overview"), _overviewTab));
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.attribution"), _attributionTab));
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.hookcheck"), _hookCheckTab));
+            _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.keymonitor"), _keyMonitorTab));
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.truth"), _truthTab));
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.hooksuspects"), _hookSuspectsTab));
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.report"), _reportTab));
@@ -241,7 +276,7 @@ namespace HotkeyHound.Ui
             _logBox.ReadOnly = true;
             _logBox.ScrollBars = ScrollBars.Vertical;
             _logBox.Dock = DockStyle.Fill;
-            try { _logBox.Font = new Font("Consolas", 8.5F); }
+            try { _logBox.Font = UiTheme.MonoFont(8.5F); }
             catch (Exception) { }
             logPanel.Controls.Add(_logBox);
             split.Panel2.Controls.Add(logPanel);
@@ -259,6 +294,8 @@ namespace HotkeyHound.Ui
             Controls.Add(_status);
             if (_banner != null) Controls.Add(_banner);
             Controls.Add(_toolbar);
+
+            UiTheme.ApplyTree(this);
         }
 
         private ToolStrip BuildToolbar()
@@ -285,8 +322,8 @@ namespace HotkeyHound.Ui
             var panel = new Panel();
             panel.Dock = DockStyle.Top;
             panel.Height = 60;
-            panel.BackColor = Color.FromArgb(255, 246, 229);
-            panel.ForeColor = Color.FromArgb(140, 55, 20);
+            panel.BackColor = UiTheme.BannerBack;
+            panel.ForeColor = UiTheme.BannerText;
             panel.Padding = new Padding(10, 6, 10, 6);
 
             var label = new Label();
@@ -313,10 +350,12 @@ namespace HotkeyHound.Ui
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // 关闭时确保钩子被卸载（若用户正在监听/布防）
+            // 关闭时确保钩子被卸载（若用户正在监听/布防/监视）
             try { if (_attribution.IsRunning) _attribution.Stop(); }
             catch (Exception) { }
             try { if (_sniffer.IsRunning) _sniffer.Stop(); }
+            catch (Exception) { }
+            try { if (_keyMonitorTab != null) _keyMonitorTab.StopMonitor(false); }
             catch (Exception) { }
             base.OnFormClosing(e);
         }

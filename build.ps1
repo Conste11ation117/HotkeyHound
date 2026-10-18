@@ -86,6 +86,10 @@ if (-not (Test-Path $helpEn)) { throw "找不到帮助文档：$helpEn" }
 $catalog = Join-Path $root 'data\hook-catalog.json'
 if (-not (Test-Path $catalog)) { throw "找不到钩子知识库：$catalog" }
 
+# 正式程序图标（256×256 PNG-in-ICO，由工具生成；窗口图标也从 exe 的这个资源读取）。
+$icon = Join-Path $root 'assets\hotkeyhound.ico'
+if (-not (Test-Path $icon)) { throw "找不到程序图标：$icon" }
+
 $refs = @(
   'mscorlib.dll', 'System.dll', 'System.Core.dll',
   'System.Drawing.dll', 'System.Windows.Forms.dll', 'System.Xml.dll'
@@ -103,6 +107,7 @@ $cscArgs = @(
   '-nowarn:0618',
   "-out:$out",
   "-win32manifest:$manifest",
+  "-win32icon:$icon",
   "-resource:$hookDll,HotkeyHound.Hook.dll",
   "-resource:$helpZh,help.zh-CN.html",
   "-resource:$helpEn,help.en-US.html",

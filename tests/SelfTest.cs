@@ -10,7 +10,7 @@ using HotkeyHound.Core.Adapters;
 
 namespace HotkeyHound
 {
-    /// <summary>--selftest 的实现：SPEC §9 的 T1–T7。</summary>
+    /// <summary>--selftest 的实现：SPEC §9 的 T1–T9。</summary>
     public static class SelfTest
     {
         private sealed class Result
@@ -66,6 +66,7 @@ namespace HotkeyHound
                 RunT4(firstScan, log);
                 RunT5(firstScan, log, tempDir);
                 RunT8(firstScan);
+                RunT9();
                 if (skipHooks)
                 {
                     Skip("T6", "引擎 B 归属链路", "已按 --no-hooks 跳过（该测试会安装全局钩子并注入 DLL）");
@@ -411,6 +412,114 @@ namespace HotkeyHound
             }
 
             Add("T8", "钩子知识库与自动归属策略", pass, detail.ToString());
+        }
+
+        // ---------------------------------------------------------------- T9
+
+        /// <summary>
+        /// 按键监视器的纯函数：四分支判定、Scancode Map 解析、卡住的修饰键对照。
+        /// 本项绝不安装任何钩子，--no-hooks 下也照常运行。
+        /// </summary>
+        private static void RunT9()
+        {
+            var detail = new StringBuilder();
+            bool pass = true;
+            string evidence, note;
+
+            int branches = 0;
+            if (KeyMonitorLogic.Decide(false, false, false, true, true, false, out evidence, out note)
+                == KeyMonitorVerdict.NeverReachedSystem) branches++;
+            if (KeyMonitorLogic.Decide(true, false, false, true, true, false, out evidence, out note)
+                == KeyMonitorVerdict.SwallowedBeforeHook) branches++;
+            if (KeyMonitorLogic.Decide(true, true, false, true, true, false, out evidence, out note)
+                == KeyMonitorVerdict.SwallowedAfterHook) branches++;
+            if (KeyMonitorLogic.Decide(true, true, true, true, true, false, out evidence, out note)
+                == KeyMonitorVerdict.Delivered) branches++;
+            if (branches != 4)
+            {
+                pass = false;
+                detail.Append("四分支只通过 ").Append(branches).Append("/4；");
+            }
+            else detail.Append("四分支 4/4；");
+
+            // 附加语义：收到归属 = 送达；归属引擎没开 = 无法确定；不是全局热键 = 送到前台窗口。
+            int extras = 0;
+            if (KeyMonitorLogic.Decide(true, true, false, true, true, true, out evidence, out note)
+                == KeyMonitorVerdict.Delivered) extras++;
+            if (KeyMonitorLogic.Decide(true, true, false, true, false, false, out evidence, out note)
+                == KeyMonitorVerdict.Inconclusive) extras++;
+            if (KeyMonitorLogic.Decide(true, true, false, false, false, false, out evidence, out note)
+                == KeyMonitorVerdict.Delivered) extras++;
+            if (extras != 3)
+            {
+                pass = false;
+                detail.Append("附加语义 ").Append(extras).Append("/3；");
+            }
+            else detail.Append("附加语义 3/3；");
+
+            // 构造的 Scancode Map：CapsLock(0x3A) ↔ 左 Ctrl(0x1D)，条数含结尾空项。
+            byte[] sample = new byte[]
+            {
+                0,0,0,0, 0,0,0,0, 3,0,0,0,
+                0x1D,0x00,0x3A,0x00,
+                0x3A,0x00,0x1D,0x00,
+                0x00,0x00,0x00,0x00
+            };
+            List<ScanCodeMapping> map = KeyMonitorLogic.ParseScancodeMap(sample);
+            bool mapPass = map.Count == 2
+                && map[0].Input == 0x1D && map[0].Output == 0x3A
+                && map[1].Input == 0x3A && map[1].Output == 0x1D;
+
+            // 扩展扫描码：左 Win 键输出为 E0 5B。
+            byte[] extended = new byte[]
+            {
+                0,0,0,0, 0,0,0,0, 2,0,0,0,
+                0x38,0x00,0x5B,0xE0,
+                0x00,0x00,0x00,0x00
+            };
+            List<ScanCodeMapping> map2 = KeyMonitorLogic.ParseScancodeMap(extended);
+            if (!mapPass || map2.Count != 1 || map2[0].Output != 0xE05B)
+            {
+                pass = false;
+                detail.Append("Scancode Map 解析失败（普通 ").Append(map.Count)
+                      .Append(" 条、扩展 ").Append(map2.Count).Append(" 条）；");
+            }
+            else detail.Append("Scancode Map 2/2（含 E0 扩展码）；");
+
+            // 修饰键：系统说按着/钩子没看到 → 卡住；钩子看到按着/系统已松开 → 漏了抬起。
+            bool[] osDown = new bool[KeyMonitorLogic.ModifierVks.Length];
+            bool[] hookDown = new bool[KeyMonitorLogic.ModifierVks.Length];
+            osDown[4] = true; // LShift
+            ModifierSnapshot[] m1 = KeyMonitorLogic.EvaluateModifiers(osDown, hookDown);
+            osDown[4] = false;
+            hookDown[4] = true;
+            hookDown[7] = true; // RWin
+            ModifierSnapshot[] m2 = KeyMonitorLogic.EvaluateModifiers(osDown, hookDown);
+            ModifierSnapshot[] m3 = KeyMonitorLogic.EvaluateModifiers(
+                new bool[KeyMonitorLogic.ModifierVks.Length],
+                new bool[KeyMonitorLogic.ModifierVks.Length]);
+            bool modPass = m1[4].State == ModifierState.OsDownHookMissed
+                && m2[4].State == ModifierState.HookDownOsMissed
+                && m2[7].State == ModifierState.HookDownOsMissed
+                && !KeyMonitorLogic.AnyStuck(m3);
+            if (!modPass)
+            {
+                pass = false;
+                detail.Append("卡住的修饰键判定失败；");
+            }
+            else detail.Append("修饰键状态 3/3；");
+
+            bool namesPass = ScanCodeNames.Name(0x3A) == "CapsLock"
+                && ScanCodeNames.Name(0xE05B) == "LWin";
+            if (!namesPass)
+            {
+                pass = false;
+                detail.Append("扫描码名称表失败；");
+            }
+            else detail.Append("扫描码名称表通过；");
+
+            detail.Append("本项没有安装任何钩子");
+            Add("T9", "按键监视器判定与只读解析", pass, detail.ToString());
         }
 
         // ---------------------------------------------------------------- T6

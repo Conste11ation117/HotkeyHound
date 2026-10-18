@@ -139,7 +139,34 @@ key is really swallowed, use engine C ("Hook detection" page). If the report's a
 press them? They are very likely swallowed by its hook", the combination was free in engine A while that software
 has a matching hook suspicion — change it in that software's settings.</p>
 
-<h2>7. Permissions and integrity</h2>
+<h2>7. How to use the key monitor and read its verdicts</h2>
+<p>A scan and an attribution report cannot answer "at which layer did this key get lost?". The Key monitor
+page watches three layers at once:</p>
+<ol>
+  <li><b>Raw Input (device layer)</b>: did the keyboard deliver the key to Windows at all?</li>
+  <li><b>WH_KEYBOARD_LL (hook chain)</b>: did the key reach this program's low-level keyboard hook?</li>
+  <li><b>Window messages</b>: did this program's window receive <code>WM_KEYDOWN</code>/<code>WM_KEYUP</code>
+      (only possible while that window has focus)?</li>
+</ol>
+<p>Usage: open <b>Key monitor</b> → <b>Start monitoring (installs keyboard hook)</b> → press the problematic key
+→ read the <b>Verdict</b> card. The button says it installs a hook; <b>Stop monitoring</b> calls
+<code>UnhookWindowsHookEx</code> and unregisters raw input immediately. <b>Loading the page installs no hook.</b></p>
+<table>
+  <tr><th>Verdict</th><th>Meaning</th><th>What to try next</th></tr>
+  <tr><td>Never reached the system</td><td>Raw input never saw the key</td><td>Try another keyboard/port; review the keyboard-class driver list below (read-only, never judged or unloaded)</td></tr>
+  <tr><td>Swallowed before the hook chain</td><td>Raw input saw it, the low-level hook did not</td><td>Something upstream (IME, vendor driver, macro tool, remote-control software) intercepts it after the device layer and before the hook chain</td></tr>
+  <tr><td>Swallowed after the hook chain</td><td>Raw + hook saw it, it is a global hotkey, but engine B reported no owner</td><td>Start Key attribution and re-test; if there is still no owner, use the comparison workflow on Hook detection and exit suspect software one by one</td></tr>
+  <tr><td>Delivered</td><td>All three layers saw it, or the global hotkey got an owner</td><td>The input path is fine; the problem is in the receiving software</td></tr>
+  <tr><td>Inconclusive</td><td>It is a global hotkey but the attribution engine was not running</td><td>This is not "no problem" — it means there is not enough evidence; start Key attribution and re-test</td></tr>
+</table>
+<p><b>Stuck modifiers</b>: left/right Ctrl/Alt/Shift/Win are checked with <code>GetAsyncKeyState</code> and compared
+with what the hook saw. "OS says down, hook saw no press" may simply mean the key was already held when monitoring
+started — release and press it again to confirm.</p>
+<p><b>Remaps and drivers (read-only)</b>: the <code>Scancode Map</code> value is parsed into a
+"press X → system produces Y" list. Services under <code>HKLM\SYSTEM\CurrentControlSet\Services</code> that match
+<code>Type=1</code>, <code>Start≠4</code> and have a keyboard-like group/driver name are <b>listed only</b>.
+The tool never judges, stops or unloads a driver.</p>
+<h2>8. Permissions and integrity</h2>
 <ul>
   <li><b>Administrator (UAC)</b>: when not elevated, attribution for processes running as administrator is
       invisible. The top banner and the Scan overview page both offer "Relaunch as administrator"; from the command
@@ -153,7 +180,7 @@ has a matching hook suspicion — change it in that software's settings.</p>
       This is a Windows security mechanism, not a bug in this tool.</li>
 </ul>
 
-<h2>8. Known limitations</h2>
+<h2>9. Known limitations</h2>
 <ul>
   <li><b>32-bit processes are invisible</b>: this program is 64-bit and the hook DLL is x64.</li>
   <li><b>Hook-based hotkeys do not go through WM_HOTKEY</b>: they neither appear in engine A nor trigger engine B.</li>
@@ -162,7 +189,7 @@ has a matching hook suspicion — change it in that software's settings.</p>
   <li><b>Engines B/C install hooks</b>: by design, and only on explicit action.</li>
 </ul>
 
-<h2>9. Troubleshooting</h2>
+<h2>10. Troubleshooting</h2>
 <ul>
   <li><b>Scan finds nothing / numbers too low?</b> Ensure no other program registers a mass of hotkeys; re-run
       from an ordinary directory.</li>
@@ -175,7 +202,7 @@ has a matching hook suspicion — change it in that software's settings.</p>
       window / on the Report &amp; about page (restart to take effect).</li>
 </ul>
 
-<h2>10. Uninstall / cleanup</h2>
+<h2>11. Uninstall / cleanup</h2>
 <ul>
   <li>Portable single file: just delete <code>HotkeyHound.exe</code> &mdash; no installer, no registry writes.</li>
   <li>The program extracts engine B's native DLL (<code>HotkeyHound.Hook.dll</code>) and <code>settings.ini</code>

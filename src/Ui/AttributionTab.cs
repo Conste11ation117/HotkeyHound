@@ -40,20 +40,21 @@ namespace HotkeyHound.Ui
 
             var title = new Label();
             title.Text = L10n.T("ui.at.title");
-            title.Font = new Font(Font.FontFamily, 12F, FontStyle.Bold);
+            title.Font = UiTheme.TitleFont(12F);
             title.Location = new Point(0, 6);
             title.AutoSize = true;
 
             _hint = new Label();
             _hint.Location = new Point(2, 34);
-            _hint.Size = new Size(1000, 34);
+            _hint.Size = new Size(100, 34);
+            _hint.AutoSize = false;
             _hint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            _hint.ForeColor = Color.DimGray;
+            _hint.ForeColor = UiTheme.Muted;
             _hint.Text = L10n.T("ui.at.hint");
 
             _toggleButton = new Button();
             _toggleButton.Text = L10n.T("ui.at.start");
-            _toggleButton.Font = new Font(Font.FontFamily, 11F, FontStyle.Bold);
+            _toggleButton.Font = UiTheme.TitleFont(11F);
             _toggleButton.Size = new Size(150, 40);
             _toggleButton.Location = new Point(0, 74);
             _toggleButton.Click += OnToggleClick;
@@ -73,12 +74,13 @@ namespace HotkeyHound.Ui
             _statusLabel = new Label();
             _statusLabel.Location = new Point(398, 86);
             _statusLabel.AutoSize = true;
-            _statusLabel.ForeColor = Color.FromArgb(60, 90, 60);
+            _statusLabel.ForeColor = UiTheme.Muted;
             _statusLabel.Text = L10n.T("ui.at.notStarted");
 
             _warningLabel = new Label();
             _warningLabel.Location = new Point(622, 74);
             _warningLabel.Size = new Size(380, 52);
+            _warningLabel.AutoSize = false;
             _warningLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             _warningLabel.Text = BuildWarningText();
 
@@ -91,8 +93,9 @@ namespace HotkeyHound.Ui
             _autoStatus = new Label();
             _autoStatus.Location = new Point(490, 136);
             _autoStatus.Size = new Size(560, 24);
+            _autoStatus.AutoSize = false;
             _autoStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            _autoStatus.ForeColor = Color.DimGray;
+            _autoStatus.ForeColor = UiTheme.Muted;
             _autoStatus.Text = "";
 
             top.Controls.Add(title);
@@ -126,8 +129,9 @@ namespace HotkeyHound.Ui
             var autoHeader = new Label();
             autoHeader.Dock = DockStyle.Top;
             autoHeader.Height = 24;
+            autoHeader.AutoSize = false;
             autoHeader.Text = L10n.T("ui.at.autoListTitle");
-            autoHeader.ForeColor = Color.DimGray;
+            autoHeader.ForeColor = UiTheme.Muted;
             autoHeader.TextAlign = ContentAlignment.MiddleLeft;
 
             _autoList = new ListView();
@@ -201,7 +205,7 @@ namespace HotkeyHound.Ui
                 item.SubItems.Add(record.Combo == null ? L10n.T("attr.unknownCombo") : record.Combo.Display());
                 item.SubItems.Add(string.IsNullOrEmpty(record.ProcessPath) ? L10n.T("ui.at.unknownPath") : record.ProcessPath);
                 item.SubItems.Add(record.IsElevated ? L10n.T("common.yes") : L10n.T("common.no"));
-                if (record.IsElevated) item.ForeColor = Color.FromArgb(150, 90, 10);
+                if (record.IsElevated) item.ForeColor = UiTheme.Warning;
                 _list.Items.Add(item);
                 item.EnsureVisible();
                 _statusLabel.Text = L10n.F("ui.at.captured", _list.Items.Count);
@@ -221,13 +225,13 @@ namespace HotkeyHound.Ui
             {
                 engine.Stop();
                 _toggleButton.Text = L10n.T("ui.at.start");
-                _statusLabel.ForeColor = Color.FromArgb(60, 90, 60);
+                _statusLabel.ForeColor = UiTheme.Muted;
                 _statusLabel.Text = L10n.T("ui.at.stopped");
                 return;
             }
 
             _toggleButton.Enabled = false;
-            _statusLabel.ForeColor = Color.FromArgb(150, 90, 10);
+            _statusLabel.ForeColor = UiTheme.Warning;
             _statusLabel.Text = L10n.T("ui.at.installing");
             // Start() 最多等 5 秒，放后台线程避免冻结界面
             var thread = new Thread(delegate ()
@@ -254,13 +258,13 @@ namespace HotkeyHound.Ui
             if (ok)
             {
                 _toggleButton.Text = L10n.T("ui.at.stop");
-                _statusLabel.ForeColor = Color.FromArgb(60, 90, 60);
+                _statusLabel.ForeColor = UiTheme.Success;
                 _statusLabel.Text = L10n.T("ui.at.listening");
             }
             else
             {
                 _toggleButton.Text = L10n.T("ui.at.start");
-                _statusLabel.ForeColor = Color.FromArgb(170, 40, 30);
+                _statusLabel.ForeColor = UiTheme.Error;
                 _statusLabel.Text = L10n.F("ui.at.startFailed", error ?? engine.LastError ?? L10n.T("common.unknown"));
                 MessageBox.Show(this,
                     L10n.F("ui.at.startFailedDetail", error ?? engine.LastError),
@@ -295,7 +299,7 @@ namespace HotkeyHound.Ui
             _autoPlanned = AutoProbe.Plan(snapshot.Occupancy, AutoProbe.DefaultMax).Plan.Count;
             _autoList.Items.Clear();
             _autoButton.Text = L10n.T("ui.at.autoButtonStop");
-            _autoStatus.ForeColor = Color.FromArgb(150, 90, 10);
+            _autoStatus.ForeColor = UiTheme.Warning;
             _autoStatus.Text = L10n.T("ui.at.autoStarting");
             _toggleButton.Enabled = false;
 
@@ -365,9 +369,9 @@ namespace HotkeyHound.Ui
                 item.SubItems.Add(record.Note);
                 switch (record.Outcome)
                 {
-                    case AutoProbeOutcome.Attributed: item.ForeColor = Color.FromArgb(20, 110, 40); break;
-                    case AutoProbeOutcome.NoResponse: item.ForeColor = Color.FromArgb(150, 40, 30); break;
-                    default: item.ForeColor = Color.Gray; break;
+                    case AutoProbeOutcome.Attributed: item.ForeColor = UiTheme.Success; break;
+                    case AutoProbeOutcome.NoResponse: item.ForeColor = UiTheme.Error; break;
+                    default: item.ForeColor = UiTheme.Muted; break;
                 }
                 _autoList.Items.Add(item);
                 item.EnsureVisible();
@@ -395,12 +399,12 @@ namespace HotkeyHound.Ui
             _toggleButton.Enabled = true;
             if (!ok)
             {
-                _autoStatus.ForeColor = Color.FromArgb(170, 40, 30);
+                _autoStatus.ForeColor = UiTheme.Error;
                 _autoStatus.Text = L10n.F("ui.at.autoFailed", error ?? L10n.T("common.unknown"));
                 return;
             }
             if (result == null) return;
-            _autoStatus.ForeColor = Color.FromArgb(60, 90, 60);
+            _autoStatus.ForeColor = UiTheme.Success;
             _autoStatus.Text = L10n.F("ui.at.autoDone",
                 result.CountOf(AutoProbeOutcome.Attributed),
                 result.CountOf(AutoProbeOutcome.NoResponse),

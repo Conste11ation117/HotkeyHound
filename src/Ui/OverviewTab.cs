@@ -31,10 +31,11 @@ namespace HotkeyHound.Ui
 
             _scanButton = new Button();
             _scanButton.Text = L10n.T("ui.ov.scan");
-            _scanButton.Font = new Font(Font.FontFamily, 12F, FontStyle.Bold);
+            _scanButton.Font = UiTheme.TitleFont(12F);
             _scanButton.Size = new Size(150, 46);
             _scanButton.Location = new Point(0, 4);
             _scanButton.Click += OnScanClick;
+            UiTheme.MarkPrimary(_scanButton);
 
             _reportButton = new Button();
             _reportButton.Text = L10n.T("ui.ov.report");
@@ -59,7 +60,7 @@ namespace HotkeyHound.Ui
             _progressText.Location = new Point(480, 32);
             _progressText.Size = new Size(300, 18);
             _progressText.Text = L10n.T("ui.ov.notScanned");
-            _progressText.ForeColor = Color.Gray;
+            _progressText.ForeColor = UiTheme.Muted;
             _progressText.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
             top.Controls.Add(_scanButton);
@@ -70,8 +71,10 @@ namespace HotkeyHound.Ui
 
             var cards = new TableLayoutPanel();
             cards.Dock = DockStyle.Top;
-            cards.Height = 62;
+            cards.Height = 74;
             cards.ColumnCount = 4;
+            cards.RowCount = 1;
+            cards.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             for (int i = 0; i < 4; i++) cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
 
             string[] titles = new string[]
@@ -90,14 +93,14 @@ namespace HotkeyHound.Ui
 
                 _cardValues[i] = new Label();
                 _cardValues[i].Text = "—";
-                _cardValues[i].Font = new Font(Font.FontFamily, 16F, FontStyle.Bold);
-                _cardValues[i].Location = new Point(10, 2);
+                _cardValues[i].Font = UiTheme.TitleFont(16F);
+                _cardValues[i].Location = new Point(10, 3);
                 _cardValues[i].AutoSize = true;
 
                 _cardTitles[i] = new Label();
                 _cardTitles[i].Text = titles[i];
-                _cardTitles[i].ForeColor = Color.Gray;
-                _cardTitles[i].Location = new Point(12, 32);
+                _cardTitles[i].ForeColor = UiTheme.Muted;
+                _cardTitles[i].Location = new Point(12, 43);
                 _cardTitles[i].AutoSize = true;
 
                 box.Controls.Add(_cardValues[i]);
@@ -108,7 +111,8 @@ namespace HotkeyHound.Ui
             _hint = new Label();
             _hint.Dock = DockStyle.Top;
             _hint.Height = 34;
-            _hint.ForeColor = Color.DimGray;
+            _hint.AutoSize = false;
+            _hint.ForeColor = UiTheme.Muted;
             _hint.Text = L10n.T("ui.ov.hint");
 
             _list = new ListView();
@@ -118,7 +122,7 @@ namespace HotkeyHound.Ui
             _list.GridLines = true;
             _list.HideSelection = false;
             _list.Columns.Add(L10n.T("ui.col.combo"), 190);
-            _list.Columns.Add(L10n.T("ui.col.state"), 70);
+            _list.Columns.Add(L10n.T("ui.col.state"), 90);
             _list.Columns.Add(L10n.T("ui.col.owner"), 330);
             _list.Columns.Add(L10n.T("ui.col.evidence"), 80);
             _list.Columns.Add(L10n.T("ui.col.note"), 360);
@@ -197,7 +201,7 @@ namespace HotkeyHound.Ui
                         : r.DeclaredBy);
                     item.SubItems.Add(r.Evidence);
                     item.SubItems.Add(r.Note);
-                    if (r.Kind == TruthKind.RegisteredButUnowned) item.ForeColor = Color.FromArgb(150, 40, 30);
+                    if (r.Kind == TruthKind.RegisteredButUnowned) item.ForeColor = UiTheme.Error;
                     _list.Items.Add(item);
                 }
             }

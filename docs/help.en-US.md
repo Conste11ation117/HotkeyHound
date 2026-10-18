@@ -182,7 +182,37 @@ software's settings.
 
 ---
 
-## 7. Permissions and integrity
+## 7. How to use the key monitor and read its verdicts
+
+A scan and an attribution report cannot answer "at which layer did this key get lost?". The
+**Key monitor** page watches three layers at once:
+
+1. **Raw Input (device layer)** — did the keyboard deliver the key to Windows at all?
+2. **WH_KEYBOARD_LL (hook chain)** — did the key reach this program's low-level keyboard hook?
+3. **Window messages** — did this program's window receive `WM_KEYDOWN` / `WM_KEYUP` (only possible
+   while that window has focus)?
+
+Usage: open **Key monitor** → **Start monitoring (installs keyboard hook)** → press the problematic
+key → read the **Verdict** card. The button says it installs a hook; **Stop monitoring** calls
+`UnhookWindowsHookEx` and unregisters raw input immediately. **Loading the page installs no hook.**
+
+| Verdict | Meaning | What to try next |
+|---|---|---|
+| Never reached the system | Raw input never saw the key | Try another keyboard/port; review the keyboard-class driver list below (read-only, never judged or unloaded) |
+| Swallowed before the hook chain | Raw input saw it, the low-level hook did not | Something upstream (IME, vendor driver, macro tool, remote-control software) intercepts it after the device layer and before the hook chain |
+| Swallowed after the hook chain | Raw + hook saw it, it is a global hotkey, but engine B reported no owner | Start **Key attribution** and re-test; if there is still no owner, use the comparison workflow on **Hook detection** and exit suspect software one by one |
+| Delivered | All three layers saw it, or the global hotkey got an owner | The input path is fine; the problem is in the receiving software |
+| Inconclusive | It is a global hotkey but the attribution engine was not running | This is not "no problem" — it means there is not enough evidence; start Key attribution and re-test |
+
+**Stuck modifiers**: left/right Ctrl/Alt/Shift/Win are checked with `GetAsyncKeyState` and compared
+with what the hook saw. "OS says down, hook saw no press" may simply mean the key was already held
+when monitoring started — release and press it again to confirm.
+
+**Remaps and drivers (read-only)**: the `Scancode Map` value under
+`HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layout` is parsed into a "press X → system produces Y"
+list. Services under `HKLM\SYSTEM\CurrentControlSet\Services` that match `Type=1`, `Start≠4` and have a
+keyboard-like group/driver name are **listed only**. The tool never judges, stops or unloads a driver.
+## 8. Permissions and integrity
 
 - **Administrator (UAC)**: when not run as administrator, attribution for processes running as administrator
   (e.g. PowerToys) is invisible. The top banner and the "Scan overview" page both offer a "Relaunch as
@@ -198,7 +228,7 @@ software's settings.
 
 ---
 
-## 8. Known limitations
+## 9. Known limitations
 
 - **32-bit processes are invisible**: this program is 64-bit and the injected hook DLL is x64, so attribution
   for running 32-bit processes is not covered.
@@ -211,7 +241,7 @@ software's settings.
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 **Q: The scan finds nothing / the numbers look too low?**
 A: Make sure another program is not registering a mass of hotkeys at the same time; re-run from an ordinary
@@ -234,7 +264,7 @@ window (restart the program for it to take effect).
 
 ---
 
-## 10. Uninstall / cleanup
+## 11. Uninstall / cleanup
 
 HotkeyHound is a portable single-file program with **no installer and no registry writes**:
 

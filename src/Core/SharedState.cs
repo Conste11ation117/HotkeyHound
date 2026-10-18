@@ -10,7 +10,7 @@ namespace HotkeyHound.Core
     public static class AppInfo
     {
         public const string Title = "HotkeyHound";
-        public const string Version = "1.1.0";
+        public const string Version = "1.2.0";
 
         /// <summary>版本说明（随当前语言变化）。</summary>
         public static string VersionNote { get { return L10n.T("app.versionNote"); } }

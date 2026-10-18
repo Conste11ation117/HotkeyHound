@@ -34,15 +34,16 @@ namespace HotkeyHound.Ui
 
             var title = new Label();
             title.Text = L10n.T("ui.hk.title");
-            title.Font = new Font(Font.FontFamily, 12F, FontStyle.Bold);
+            title.Font = UiTheme.TitleFont(12F);
             title.Location = new Point(0, 6);
             title.AutoSize = true;
 
             var guide = new Label();
             guide.Location = new Point(2, 34);
-            guide.Size = new Size(1010, 20);
+            guide.Size = new Size(100, 20);
+            guide.AutoSize = false;
             guide.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            guide.ForeColor = Color.FromArgb(170, 100, 20);
+            guide.ForeColor = UiTheme.Warning;
             guide.Text = L10n.T("ui.hk.guide");
 
             _comboBox = new TextBox();
@@ -54,7 +55,7 @@ namespace HotkeyHound.Ui
 
             _armButton = new Button();
             _armButton.Text = L10n.T("ui.hk.arm");
-            _armButton.Font = new Font(Font.FontFamily, 10F, FontStyle.Bold);
+            _armButton.Font = UiTheme.TitleFont(10F);
             _armButton.Size = new Size(160, 38);
             _armButton.Location = new Point(210, 58);
             _armButton.Click += OnArmClick;
@@ -68,12 +69,13 @@ namespace HotkeyHound.Ui
             _statusLabel = new Label();
             _statusLabel.Location = new Point(540, 68);
             _statusLabel.AutoSize = true;
-            _statusLabel.ForeColor = Color.FromArgb(60, 90, 60);
+            _statusLabel.ForeColor = UiTheme.Success;
             _statusLabel.Text = L10n.T("ui.hk.notArmed");
 
             _warningLabel = new Label();
             _warningLabel.Location = new Point(2, 100);
-            _warningLabel.Size = new Size(1010, 42);
+            _warningLabel.Size = new Size(100, 42);
+            _warningLabel.AutoSize = false;
             _warningLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             _warningLabel.Text = L10n.T("ui.hk.warn");
 
@@ -104,7 +106,7 @@ namespace HotkeyHound.Ui
 
             var candTitle = new Label();
             candTitle.Text = L10n.T("ui.hk.candTitle");
-            candTitle.Font = new Font(Font.FontFamily, 9.5F, FontStyle.Bold);
+            candTitle.Font = UiTheme.TitleFont(9.5F);
             candTitle.Location = new Point(4, 6);
             candTitle.AutoSize = true;
 
@@ -195,11 +197,11 @@ namespace HotkeyHound.Ui
             {
                 if (!sniffer.IsRunning)
                 {
-                    _statusLabel.ForeColor = Color.FromArgb(150, 90, 10);
+                    _statusLabel.ForeColor = UiTheme.Warning;
                     _statusLabel.Text = L10n.T("ui.hk.installing");
                     if (!sniffer.Start())
                     {
-                        _statusLabel.ForeColor = Color.FromArgb(170, 40, 30);
+                        _statusLabel.ForeColor = UiTheme.Error;
                         _statusLabel.Text = L10n.F("ui.hk.installFail", sniffer.LastError ?? L10n.T("common.unknown"));
                         MessageBox.Show(this, L10n.F("ui.hk.installFailDlg", sniffer.LastError),
                                         AppInfo.Title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -209,12 +211,12 @@ namespace HotkeyHound.Ui
 
                 if (!sniffer.Arm(combo))
                 {
-                    _statusLabel.ForeColor = Color.FromArgb(170, 40, 30);
+                    _statusLabel.ForeColor = UiTheme.Error;
                     _statusLabel.Text = L10n.F("ui.hk.armFail", sniffer.LastError ?? L10n.T("common.unknown"));
                     return;
                 }
 
-                _statusLabel.ForeColor = Color.FromArgb(60, 90, 60);
+                _statusLabel.ForeColor = UiTheme.Success;
                 _statusLabel.Text = L10n.F("ui.hk.armed", combo.Display(), HookSniffer.ArmWindow.TotalSeconds);
                 RefreshCandidates();
                 _tick.Start();
@@ -230,7 +232,7 @@ namespace HotkeyHound.Ui
             HookSniffer sniffer = _host.Sniffer;
             if (sniffer.IsRunning) sniffer.Stop();
             if (_tick.Enabled) _tick.Stop();
-            _statusLabel.ForeColor = Color.FromArgb(60, 90, 60);
+            _statusLabel.ForeColor = UiTheme.Muted;
             _statusLabel.Text = L10n.T("ui.hk.stopped");
         }
 
@@ -256,11 +258,11 @@ namespace HotkeyHound.Ui
                 item.SubItems.Add(record.Note);
                 switch (record.Verdict)
                 {
-                    case HookVerdict.Delivered: item.ForeColor = Color.FromArgb(20, 110, 40); break;
-                    case HookVerdict.NotGlobal: item.ForeColor = Color.FromArgb(60, 80, 150); break;
+                    case HookVerdict.Delivered: item.ForeColor = UiTheme.Success; break;
+                    case HookVerdict.NotGlobal: item.ForeColor = UiTheme.Info; break;
                     case HookVerdict.SwallowedUpstream:
-                    case HookVerdict.SwallowedBeforeHotkey: item.ForeColor = Color.FromArgb(170, 40, 30); break;
-                    default: item.ForeColor = Color.Gray; break;
+                    case HookVerdict.SwallowedBeforeHotkey: item.ForeColor = UiTheme.Error; break;
+                    default: item.ForeColor = UiTheme.Muted; break;
                 }
                 _list.Items.Add(item);
                 item.EnsureVisible();

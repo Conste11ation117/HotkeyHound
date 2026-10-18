@@ -15,16 +15,18 @@ namespace HotkeyHound
         public bool Scan;
         public bool SelfTest;
         public bool Listen;
+        public bool Monitor;
         public bool Helper;
         public bool NoHooks;
         public bool AttributeAll;
         public bool Yes;
         public bool DryRun;
         public int Max = AutoProbe.DefaultMax;
-        /// <summary>文档截图模式：给出目录即启用（渲染五个页面后退出，不安装任何钩子）。</summary>
+        /// <summary>文档截图模式：给出目录即启用（渲染七个页面后退出，不安装任何钩子）。</summary>
         public string ScreenshotDir;
         public bool Elevate;
         public string Lang;
+        public string Theme;
         public string ReportPath;
         public string JsonPath;
         public int Seconds = 30;
@@ -59,6 +61,9 @@ namespace HotkeyHound
                     case "--listen":
                         o.Listen = true;
                         break;
+                    case "--monitor":
+                        o.Monitor = true;
+                        break;
                     case "--attribute-all":
                         o.AttributeAll = true;
                         break;
@@ -92,6 +97,9 @@ namespace HotkeyHound
                     case "--lang":
                         if (i + 1 < args.Length) { o.Lang = args[++i]; }
                         break;
+                    case "--theme":
+                        if (i + 1 < args.Length) { o.Theme = args[++i]; }
+                        break;
                     case "--seconds":
                         {
                             int n;
@@ -103,6 +111,7 @@ namespace HotkeyHound
                         if (kv.Length == 2 && kv[0].ToLowerInvariant() == "--report") { o.ReportPath = kv[1]; o.Scan = true; }
                         else if (kv.Length == 2 && kv[0].ToLowerInvariant() == "--json") { o.JsonPath = kv[1]; o.Scan = true; }
                         else if (kv.Length == 2 && kv[0].ToLowerInvariant() == "--lang") { o.Lang = kv[1]; }
+                        else if (kv.Length == 2 && kv[0].ToLowerInvariant() == "--theme") { o.Theme = kv[1]; }
                         else if (kv.Length == 2 && kv[0].ToLowerInvariant() == "--max")
                         {
                             int n;
@@ -241,6 +250,20 @@ namespace HotkeyHound
                 }
             }
 
+            if (opts.Monitor)
+            {
+                PrepareConsole();
+                try
+                {
+                    return RunMonitor(opts);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine(L10n.F("cli.monitor.title", AppInfo.Title, AppInfo.Version) + "： " + ex);
+                    return 1;
+                }
+            }
+
             if (opts.Helper)
             {
                 PrepareConsole();
@@ -250,6 +273,7 @@ namespace HotkeyHound
             // 无参数：启动图形界面
             try
             {
+                if (!string.IsNullOrEmpty(opts.Theme)) HotkeyHound.Ui.UiTheme.Initialize(opts.Theme);
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new HotkeyHound.Ui.MainForm(opts.ScreenshotDir));
@@ -424,6 +448,152 @@ namespace HotkeyHound
         }
 
         /// <summary>
+        /// --monitor：控制台模式的按键监视。会安装 WH_KEYBOARD_LL（显式命令，允许），
+        /// 只观察、不吞键；不安装引擎 B 的全局消息钩子，所以全局热键结论会诚实地标为「无法确定」。
+        /// </summary>
+        private static int RunMonitor(CliOptions opts)
+        {
+            int seconds = opts.Seconds <= 0 ? 15 : opts.Seconds;
+            Console.WriteLine(L10n.F("cli.monitor.title", AppInfo.Title, AppInfo.Version));
+            Console.WriteLine(L10n.F("cli.monitor.meta", seconds,
+                              ProcessIntegrity.Describe(ProcessIntegrity.Current),
+                              AppInfo.IsAdministrator() ? L10n.T("common.yes") : L10n.T("common.no")));
+            string warn = ProcessIntegrity.WarningText();
+            if (warn != null) Console.WriteLine(L10n.F("cli.listen.note", warn));
+            Console.WriteLine(new string('-', 72));
+
+            var monitor = new KeyMonitor();
+            monitor.Logged += delegate (string line) { Console.WriteLine("  " + line); };
+            monitor.KeyEvent += delegate (KeyLayerEvent e)
+            {
+                Console.WriteLine(L10n.F("cli.monitor.event",
+                    e.Time.ToString("HH:mm:ss.fff"), e.LayerName, e.KeyName, e.Vk, e.ScanCode,
+                    e.FlagsText, e.Description));
+            };
+            monitor.VerdictReady += delegate (KeyMonitorVerdictRecord r)
+            {
+                Console.WriteLine(L10n.F("cli.monitor.verdict",
+                    r.Time.ToString("HH:mm:ss"),
+                    r.VerdictName,
+                    r.Combo == null ? VkNames.Name(r.Vk) : r.Combo.Display(),
+                    r.LayersText,
+                    r.Note));
+            };
+            monitor.ModifiersChanged += delegate (ModifierSnapshot[] states)
+            {
+                var stuck = new System.Collections.Generic.List<string>();
+                foreach (ModifierSnapshot s in states)
+                    if (s != null && s.Stuck) stuck.Add(s.Name + " " + s.StateText);
+                if (stuck.Count > 0)
+                    Console.WriteLine(L10n.F("cli.monitor.stuckSome", string.Join("；", stuck.ToArray())));
+            };
+            monitor.IsGlobalHotkey = delegate (KeyCombo combo)
+            {
+                if (!KeyMonitorLogic.LooksLikeGlobalHotkey(combo)) return false;
+                var mods = new System.Collections.Generic.List<uint>();
+                if (combo.Alt) mods.Add(NativeHotkey.MOD_ALT);
+                if (combo.Ctrl) mods.Add(NativeHotkey.MOD_CONTROL);
+                if (combo.Shift) mods.Add(NativeHotkey.MOD_SHIFT);
+                if (combo.Win) mods.Add(NativeHotkey.MOD_WIN);
+                uint err;
+                return OccupancyScanner.Probe(mods.ToArray(), combo.Vk, out err);
+            };
+
+            if (!monitor.Start())
+            {
+                Console.Error.WriteLine(L10n.F("cli.monitor.startFailed",
+                    monitor.LastError ?? L10n.T("common.unknown")));
+                return 1;
+            }
+
+            try
+            {
+                if (monitor.RawReady)
+                    Console.WriteLine(L10n.F("cli.monitor.rawReady", monitor.RawWindow.ToInt64().ToString("X")));
+                else
+                    Console.WriteLine(L10n.F("cli.monitor.rawFailed", monitor.LastError ?? L10n.T("common.unknown")));
+                if (monitor.HookReady)
+                    Console.WriteLine(L10n.F("cli.monitor.hookReady", monitor.HookHandle.ToInt64().ToString("X")));
+                else
+                    Console.WriteLine(L10n.F("cli.monitor.hookFailed", monitor.LastError ?? L10n.T("common.unknown")));
+                Console.WriteLine(L10n.T("cli.monitor.windowNote"));
+                Console.WriteLine(L10n.F("cli.monitor.waiting", seconds));
+                Console.WriteLine(new string('-', 72));
+
+                DateTime deadline = DateTime.Now.AddSeconds(seconds);
+                while (DateTime.Now < deadline)
+                {
+                    System.Threading.Thread.Sleep(150);
+                }
+
+                monitor.Stop();
+
+                KeyLayerEvent[] events = monitor.Events;
+                int raw = 0, hook = 0, window = 0;
+                foreach (KeyLayerEvent e in events)
+                {
+                    if (e.Layer == KeyMonitorLayer.RawInput) raw++;
+                    else if (e.Layer == KeyMonitorLayer.LowLevelHook) hook++;
+                    else window++;
+                }
+                Console.WriteLine(new string('-', 72));
+                Console.WriteLine(L10n.F("cli.monitor.summary", raw, hook, window, monitor.Verdicts.Length));
+                if (events.Length == 0) Console.WriteLine(L10n.T("cli.monitor.noEvents"));
+
+                PrintMonitorReadOnlyInfo();
+
+                ModifierSnapshot[] modifiers = monitor.CheckModifiers();
+                var stuckFinal = new System.Collections.Generic.List<string>();
+                foreach (ModifierSnapshot s in modifiers)
+                    if (s != null && s.Stuck) stuckFinal.Add(s.Name + " " + s.StateText);
+                Console.WriteLine(stuckFinal.Count == 0
+                    ? L10n.T("cli.monitor.stuckNone")
+                    : L10n.F("cli.monitor.stuckSome", string.Join("；", stuckFinal.ToArray())));
+                Console.WriteLine(L10n.T("cli.monitor.unhooked"));
+                return 0;
+            }
+            finally
+            {
+                try { monitor.Stop(); }
+                catch (Exception) { }
+                try { monitor.Dispose(); }
+                catch (Exception) { }
+            }
+        }
+
+        private static void PrintMonitorReadOnlyInfo()
+        {
+            try
+            {
+                var map = KeyMonitor.ReadScancodeMap();
+                if (map.Count == 0) Console.WriteLine(L10n.T("cli.monitor.scancodeMapEmpty"));
+                else
+                {
+                    Console.WriteLine(L10n.F("cli.monitor.scancodeMap", map.Count));
+                    foreach (ScanCodeMapping m in map)
+                    {
+                        Console.WriteLine(L10n.F("cli.monitor.scancodeLine",
+                            m.InputName, m.OutputName, m.Input, m.Output));
+                    }
+                }
+            }
+            catch (Exception) { }
+
+            try
+            {
+                var drivers = KeyMonitor.ReadKeyboardDrivers();
+                Console.WriteLine(L10n.F("cli.monitor.drivers", drivers.Count));
+                foreach (KeyboardFilterDriver d in drivers)
+                {
+                    Console.WriteLine(L10n.F("cli.monitor.driverLine",
+                        d.Name, string.IsNullOrEmpty(d.Group) ? L10n.T("common.none") : d.Group,
+                        d.StartName, d.ImagePath));
+                }
+            }
+            catch (Exception) { }
+        }
+
+        /// <summary>
         /// winexe 程序本身没有控制台。若从命令行启动，附加到父进程的控制台，
         /// 使 --scan / --selftest 的输出可见。
         ///
@@ -484,6 +654,8 @@ namespace HotkeyHound
             Console.WriteLine(L10n.T("cli.help.scanDesc"));
             Console.WriteLine(L10n.T("cli.help.listen"));
             Console.WriteLine(L10n.T("cli.help.listenDesc"));
+            Console.WriteLine(L10n.T("cli.help.monitor"));
+            Console.WriteLine(L10n.T("cli.help.monitorDesc"));
             Console.WriteLine(L10n.T("cli.help.attributeAll"));
             Console.WriteLine(L10n.T("cli.help.attributeAllDesc"));
             Console.WriteLine(L10n.T("cli.help.selftest"));
@@ -491,6 +663,7 @@ namespace HotkeyHound
             Console.WriteLine(L10n.T("cli.help.elevate"));
             Console.WriteLine(L10n.T("cli.help.elevateDesc"));
             Console.WriteLine(L10n.T("cli.help.lang"));
+            Console.WriteLine(L10n.T("cli.help.theme"));
             Console.WriteLine(L10n.T("cli.help.helper"));
             Console.WriteLine(L10n.T("cli.help.screenshot"));
             Console.WriteLine(L10n.T("cli.help.help"));
