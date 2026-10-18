@@ -46,6 +46,9 @@
 <p>装一个全局消息钩子（<code>WH_GETMESSAGE</code>，由原生 DLL 实现）拦截 <code>WM_HOTKEY</code>。
 按下全局热键时，持有它的进程会收到消息，钩子把「持有者 PID + 组合键」报回来，于是你就知道这个热键是谁的。
 用法：界面「按键归属」点「开始监听」后按热键，或 <code>HotkeyHound.exe --listen --seconds 30</code>。</p>
+<p><b>32 位进程</b>：Windows 只允许钩子注入与安装者同位数的进程；本程序是 64 位，所以开始监听时会自动再拉起
+一个很小的 32 位宿主（<code>HotkeyHound.Helper32.exe</code>）装 32 位钩子。两条链路的记录进入同一张表，
+每行都标注目标进程的位数（x64 / x86）；32 位宿主启动失败只影响 32 位覆盖，原因写进日志，64 位路径不受影响。</p>
 <div class="note"><b>风险：</b>这一项会安装全局钩子并把原生 DLL 注入当前会话的每个进程。
 <b>只有你显式点「开始监听」时才安装</b>，点「停止监听」立刻卸载；加载界面时不会安装任何钩子。
 请尽量以管理员运行，否则看不到提权进程（如以管理员运行的 PowerToys）。</div>
@@ -157,7 +160,9 @@ HotkeyHound.exe --attribute-all --yes --report 归属报告.html --max 30</code>
 
 <h2>9. 已知限制</h2>
 <ul>
-  <li><b>看不到 32 位进程</b>：本程序是 64 位、hook DLL 是 x64，覆盖不到 32 位进程的归属。</li>
+  <li><b>32 位覆盖依赖额外的 32 位宿主</b>：Windows 不允许 64 位钩子注入 32 位进程，所以 32 位进程由开始监听时
+      自动拉起的 32 位宿主覆盖；若它被安全软件拦截或释放/启动失败，这部分归属会缺失（原因写在日志里）。
+      归属列表和报告里每行都标注目标进程的位数（x64 / x86）。</li>
   <li><b>钩子型热键不走 WM_HOTKEY</b>：这类热键不会出现在引擎 A 占用表，也不触发引擎 B 归属报告。</li>
   <li><b>只覆盖当前会话</b>：别的登录会话的热键看不到。</li>
   <li><b>部分配置编码未验证</b>：MSI Afterburner、Everything 的编码需人工核对。</li>
@@ -177,7 +182,8 @@ HotkeyHound.exe --attribute-all --yes --report 归属报告.html --max 30</code>
 <ul>
   <li>绿色单文件程序：直接删除 <code>HotkeyHound.exe</code> 即可，无安装程序、不写注册表。</li>
   <li>程序会在 <code>%LOCALAPPDATA%\HotkeyHound\</code>（或 exe 同目录）释放引擎 B 用的原生 DLL
-      （<code>HotkeyHound.Hook.dll</code>）与 <code>settings.ini</code>，删除该目录即可。</li>
+      （<code>HotkeyHound.Hook.dll</code>）、32 位链路的两个产物（<code>hooks\x86\HotkeyHound.Hook32.dll</code>
+      与 <code>HotkeyHound.Helper32.exe</code>）以及 <code>settings.ini</code>，删除该目录即可。</li>
   <li>引擎 B 的 DLL 会被注入当前会话的进程；这些注入在进程重启后自然消失，<b>重启电脑可彻底清除</b>。
       停止监听时本程序也会调用 <code>UnhookWindowsHookEx</code> 卸载钩子。</li>
 </ul>

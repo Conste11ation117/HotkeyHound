@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -127,12 +127,28 @@ namespace HotkeyHound
     public static class Program
     {
         private const int STD_OUTPUT_HANDLE = -11;
+        private const int SW_RESTORE = 9;
+
+        // 注入到别的进程里的 hook DLL 是通过固定名的共享内存（Local\HotkeyHound.Ctl）来找
+        // 控制窗口的，DLL 那边没有别的办法知道"该跟哪个实例说话"。所以两个实例同时跑会互相
+        // 覆盖 arm/ctl：归属记录串台，而且任意一方退出都会把对方的上报一起关掉。
+        // 与其把共享内存改成每实例唯一（DLL 无法安全地发现随机名），不如禁止第二个实例。
+        private static System.Threading.Mutex _instanceMutex;
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool AttachConsole(int dwProcessId);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr GetStdHandle(int nStdHandle);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr FindWindowW(string lpClassName, string lpWindowName);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [STAThread]
         public static int Main(string[] args)
@@ -271,6 +287,11 @@ namespace HotkeyHound
             }
 
             // 无参数：启动图形界面
+            if (!EnsureSingleInstance())
+            {
+                Console.Error.WriteLine(L10n.T("cli.alreadyRunning"));
+                return 0;
+            }
             try
             {
                 if (!string.IsNullOrEmpty(opts.Theme)) HotkeyHound.Ui.UiTheme.Initialize(opts.Theme);
@@ -289,6 +310,39 @@ namespace HotkeyHound
                 catch (Exception) { }
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// 保证只有一个图形实例在跑（见 _instanceMutex 的注释）。
+        /// 已有实例时把它切到前台并返回 false，调用方应当安静退出。
+        /// </summary>
+        private static bool EnsureSingleInstance()
+        {
+            try
+            {
+                bool created;
+                _instanceMutex = new System.Threading.Mutex(true, @"Local\HotkeyHound.SingleInstance", out created);
+                if (created) return true;
+                BringExistingToFront();
+                return false;
+            }
+            catch (Exception)
+            {
+                // 拿不到互斥体（极少见）时宁可放行，也不要挡住用户使用。
+                return true;
+            }
+        }
+
+        private static void BringExistingToFront()
+        {
+            try
+            {
+                IntPtr h = FindWindowW(null, AppInfo.Title);
+                if (h == IntPtr.Zero) return;
+                ShowWindow(h, SW_RESTORE);
+                SetForegroundWindow(h);
+            }
+            catch (Exception) { }
         }
 
         /// <summary>
@@ -410,10 +464,11 @@ namespace HotkeyHound
             engine.Logged += delegate (string line) { Console.WriteLine("  " + line); };
             engine.RecordReceived += delegate (AttributionRecord r)
             {
-                Console.WriteLine(string.Format("{0}  {1,-22} PID {2,-7} {3}{4}",
+                Console.WriteLine(string.Format("{0}  {1,-22} PID {2,-7} {3,-3} {4}{5}",
                     r.Time.ToString("HH:mm:ss"),
                     r.Combo == null ? L10n.T("attr.unknownCombo") : r.Combo.Display(),
                     r.Pid,
+                    string.IsNullOrEmpty(r.Bitness) ? "?" : r.Bitness,
                     r.ProcessName == null ? L10n.T("attr.unknownProc") : r.ProcessName,
                     r.IsElevated ? L10n.T("attr.elevatedTag") : ""));
                 if (!string.IsNullOrEmpty(r.ProcessPath)) Console.WriteLine(L10n.F("cli.listen.pathPrefix", r.ProcessPath));

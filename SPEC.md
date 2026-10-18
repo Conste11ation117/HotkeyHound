@@ -6,7 +6,7 @@
 
 一个 Windows 程序，用来排查全局快捷键冲突。交付：
 
-- `dist\HotkeyHound.exe` — 单文件，中文图形界面；命令行模式可用；内嵌原生 hook DLL（运行时自动提取到 `%LOCALAPPDATA%\HotkeyHound\hooks\x64\`）。
+- `dist\HotkeyHound.exe` — 单文件，中文图形界面；命令行模式可用；内嵌三份原生产物：x64 hook DLL（提取到 `%LOCALAPPDATA%\HotkeyHound\hooks\x64\`）、x86 hook DLL（`hooks\x86\`）与 32 位宿主 `HotkeyHound.Helper32.exe`（`%LOCALAPPDATA%\HotkeyHound\`）。
 - `report-*.html` — 自包含 HTML 报告（内联 CSS/JS，无外链、无 CDN）。
 - `build.ps1` — 一键构建；`README.md` — 中文使用说明。
 
@@ -46,9 +46,11 @@ HotkeyHound\
   src\Core\Reconciler.cs         A×D 真相表
   src\Core\ReportBuilder.cs      HTML 报告
   src\Core\AttributionEngine.cs  引擎 B 控制器（chunk 2）
+  src\Core\Helper32Host.cs       32 位产物释放 + 伴随宿主生命周期（1.3.0）
   src\Core\HookSniffer.cs        引擎 C（chunk 2）
   src\Core\SharedState.cs        全局状态/日志（线程安全，供 UI 订阅）
-  src\Hook\HookDll.cpp           原生 hook DLL（chunk 2）
+  src\Hook\HookDll.cpp           原生 hook DLL（x64 与 x86 共用同一份源码）
+  src\Helper32\Helper32Main.cs   32 位伴随宿主（单独编 x86，不参与主程序编译）
   src\Ui\MainForm.cs             WinForms 主界面
   src\Ui\*Tab.cs                 各标签页
   tests\SelfTest.cs              --selftest 的实现
@@ -134,12 +136,13 @@ public sealed class TruthRow {
 
 - 原生 DLL `HookDll.cpp`，导出：
   `extern "C" __declspec(dllexport) LRESULT CALLBACK HotkeyHoundHookProc(int nCode, WPARAM wParam, LPARAM lParam);`
-- DLL 在同目录 `HotkeyHound.Ctl` 共享内存（`Local\HotkeyHound.Ctl`，结构 `{ DWORD magic; HWND ctl; DWORD arm; }`，magic=`0x484B5354`）里读控制窗口句柄；在 hook 里遇到 `nCode == HC_ACTION && wParam == PM_REMOVE` 且 `((MSG*)lParam)->message == WM_HOTKEY(0x0312)` 时，
+- DLL 在同目录 `HotkeyHound.Ctl` 共享内存（`Local\HotkeyHound.Ctl`，结构 `{ DWORD magic; DWORD arm; DWORD ctlLo; DWORD ctlHi; }`，magic=`0x484B5354`；**全部 4 字节字段**，因为 x86 与 x64 的 `HWND` 宽度不同，旧的 `HWND ctl` 字段跨位数会让 `arm` 错位）里读控制窗口句柄（`(HWND)(((ULONGLONG)ctlHi << 32) | ctlLo)`）；在 hook 里遇到 `nCode == HC_ACTION && wParam == PM_REMOVE` 且 `((MSG*)lParam)->message == WM_HOTKEY(0x0312)` 时，
   `PostMessage(ctl, WM_APP+1, (WPARAM)GetCurrentProcessId(), (LPARAM)((MSG*)lParam)->lParam)`，然后照常 `CallNextHookEx`（绝不吞键）。
 - 控制器 `AttributionEngine.cs`：把 DLL 释放到 `%LOCALAPPDATA%\HotkeyHound\hooks\x64\HotkeyHound.Hook.dll`，`LoadLibrary` → `GetProcAddress` → `SetWindowsHookEx(WH_GETMESSAGE=3, proc, hMod, 0)`，在独立线程上跑消息循环（该线程必须 pump 消息，否则全局钩子会挂死系统）。
-- 收到 `WM_APP+1` 后解析 pid 与 lParam（lParam 低位=修饰键、高位=VK，映射成 `KeyCombo`），解析进程名/路径/是否提权，写入日志与结果表，并回调 UI。
+- 32 位覆盖（1.3.0）：同一份 `HookDll.cpp` 用 `vcvars32 + cl /LD` 编出 `HotkeyHound.Hook32.dll`（PE `0x014C`），由单独的 32 位宿主 `HotkeyHound.Helper32.exe`（`src/Helper32/Helper32Main.cs`，`-platform:x86 -target:exe`）`LoadLibrary` + `GetProcAddress` + `SetWindowsHookEx` + 消息循环；控制器 `Start()` 并行启动它，`Stop()` 关闭 stdin 并在超时后结束它。宿主用 `OpenProcess(SYNCHRONIZE)` 监视父进程，父进程退出即自杀。钩子过程同样只允许用原生导出地址。
+- 收到 `WM_APP+1` 后解析 pid 与 lParam（lParam 低位=修饰键、高位=VK，映射成 `KeyCombo`），解析进程名/路径/是否提权/位数（`AttributionRecord.Bitness`，由目标进程 `IsWow64Process` 判定），写入日志与结果表，并回调 UI。归属列表与报告都显示位数。
 - 关闭时必须 `UnhookWindowsHookEx`；DLL 句柄在程序退出时随进程结束。
-- 已知限制（要写进报告与 UI 提示）：x64 DLL 覆盖不到 32 位进程；非管理员看不到提权进程（PowerToys 就属于此类，UI 要提供「以管理员身份重启」按钮）。
+- 已知限制（要写进报告与 UI 提示）：32 位覆盖依赖 32 位宿主，它启动失败时 32 位进程的归属缺失（日志写原因）；非管理员看不到提权进程（PowerToys 就属于此类，UI 要提供「以管理员身份重启」按钮）。
 
 ### 引擎 C — 钩子窃取检测（chunk 2）
 
@@ -175,7 +178,7 @@ HotkeyHound.exe --help
 3. `#truth` 真相表：按 `TruthKind` 分四组展示。
 4. `#declared` 配置声明清单：按软件分组。
 5. `#advice` 建议：依据真实发现自动生成（例如检测到 PowerToys 键盘管理器的重映射 → 输出对应条目；检测到 Peek 占 `Ctrl+Space` → 提示与输入法/IDE 冲突），没有发现也要有兜底文案。
-6. `#method` 方法与局限：说明探测原理、为什么钩子型热键看不到、为什么 32 位进程与提权进程可能缺失。
+6. `#method` 方法与局限：说明探测原理、为什么钩子型热键看不到、为什么某些进程可能缺失（32 位宿主失败、提权进程、低完整性）。`#attribution` 表每行显示目标进程位数。
 7. 所有动态文本必须做 HTML 转义（`&<>"'`）。
 8. `#hooksuspects` 钩子嫌疑：知识库（内嵌 `data/hook-catalog.json` + 可选
    `%LOCALAPPDATA%\HotkeyHound\catalog.json`）与扫描结果关联，按证据等级（已确认/高度怀疑/已知默认/
@@ -215,6 +218,8 @@ WinForms，约 1080×720，中文字体（微软雅黑），标签页：
 | T6 | 引擎 B 归属链路 | 装钩子成功；启动注册了 `Ctrl+Alt+F13` 的辅助进程，`SendInput` 触发后 3 秒内收到归属报告且 pid 正确。**若会话已锁定/无交互桌面，判为 INCONCLUSIVE 并打印原因，不算失败** | chunk 2 |
 | T7 | 引擎 C 吞键检测 | 合成一个未被吞的按键 → 判定为 `Delivered/NotGlobal` 分支正确；用一个测试用 LL 钩子吞掉 `Ctrl+Alt+Shift+F14` → 判定为 `SwallowedUpstream`。同样允许 INCONCLUSIVE | chunk 2 |
 | T8 | 钩子知识库与自动归属策略 | 内嵌知识库 ≥10 条、hook/mixed 条目 ≥5；与扫描关联后至少产出带组合键的嫌疑与「仅供参考」条目；黑名单拒绝 Win+D/Alt+F4/Ctrl+Alt+Tab 且不误伤 Ctrl+Alt+M；dry-run 计划数在 1..max 内且不产出已按下的结果 | chunk 3 |
+| T9 | 按键监视器判定与只读解析 | 四分支判定、附加语义、Scancode Map（含 E0 扩展码）、卡住的修饰键全部正确，且不安装任何钩子 | chunk 4 |
+| T10 | 32 位归属链路 | 启动 `--selftest-target` 的 32 位宿主，向它的窗口 `PostMessage(WM_HOTKEY)` 后 3 秒内收到 pid 正确、`Bitness=x86` 的归属记录。**拿不到时判 INCONCLUSIVE 并说明卡在哪一步，不算失败**；`--no-hooks` 跳过 | chunk 5（1.3.0） |
 
 自测只允许在临时目录创建文件、只允许注册/注销自己的热键，结束后必须清理干净（注销热键、卸载钩子、删除临时文件、结束辅助进程）。
 

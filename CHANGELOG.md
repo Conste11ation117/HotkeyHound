@@ -4,6 +4,58 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-10-18 Companion
+
+### Added: attribution for 32-bit (WOW64) processes
+
+Windows only lets a hook inject into processes whose **bitness matches the process that installed it**.
+The x64 build was therefore blind to every 32-bit process's `WM_HOTKEY` — the one comparison-table item
+where this project still trailed. A 64-bit process cannot work around that rule from the inside, so 1.3.0
+ships a second, tiny process:
+
+- `HotkeyHound.Hook32.dll` — the same `src/Hook/HookDll.cpp` compiled a second time with
+  `vcvars32 + cl /LD` (`PE Machine=0x014C`). It installs `WH_GETMESSAGE` and reports the owner's PID
+  exactly like the x64 build.
+- `HotkeyHound.Helper32.exe` — a 32-bit console host that releases the DLL, calls `LoadLibrary` →
+  `GetProcAddress("HotkeyHoundHookProc")` → `SetWindowsHookEx(WH_GETMESSAGE, proc, hMod, 0)`, and pumps
+  messages. It never hands a managed delegate to `SetWindowsHookEx`: a delegate address is only valid in
+  the current process and injecting it would crash every GUI process on the machine (see AGENTS.md).
+- `AttributionEngine.Start()` starts the companion in parallel with the x64 hook. If extraction or
+  startup fails, the failure is logged and only 32-bit coverage is lost — the x64 path keeps working.
+  `Stop()` sends `q` on the companion's stdin, waits two seconds, then terminates it as a last resort.
+  The companion also watches its parent with `OpenProcess(SYNCHRONIZE)` and exits the moment the parent
+  dies, so a crashed HotkeyHound cannot leave a zombie behind.
+- `AttributionRecord.Bitness` (`x64` / `x86`) is derived from the target process and shown in the
+  attribution list and the report, so every row says which injection path produced it. `--listen` prints
+  the same column.
+
+### Fixed: the shared-memory control block was bitness-dependent
+
+The handshake block used to be `struct { DWORD magic; HWND ctl; DWORD arm; }`. `HWND` is 4 bytes in a
+32-bit process and 8 bytes in a 64-bit one, so the x86 hook looked for `arm` four bytes away from where
+the x64 controller wrote it (inside the handle field) and never reported anything. The layout is now
+**four 4-byte fields** on both sides:
+
+```c
+struct { DWORD magic; DWORD arm; DWORD ctlLo; DWORD ctlHi; }
+```
+
+and the DLL reconstructs the window with `(HWND)(((ULONGLONG)ctlHi << 32) | ctlLo)`, while the
+controller splits `(long)hwnd` into lo/hi. One mapping now works for both bitnesses.
+
+While fixing this, artifact extraction was also tightened: it used to treat a same-length file as
+"already up to date", which silently kept a stale x64 DLL after the layout change. It now compares the
+bytes and rewrites on any difference.
+
+### Tests and docs
+
+- Self-test gains **T10 (32-bit chain)**: it starts the companion in `--selftest-target` mode, posts
+  `WM_HOTKEY` to its window, and asserts that a report with the correct PID and `Bitness=x86` arrives
+  within 3 seconds. If it cannot, the test is INCONCLUSIVE (not a failure) and the message names the
+  step that broke. `--no-hooks` skips T10 along with T6/T7.
+- Help documents (zh/en, Markdown and HTML) now say 32-bit processes are covered and explain the
+  companion process. README is intentionally unchanged in this release.
+
 ## [1.2.0] — 2026-10-18 Sentinel
 
 ### Added: the key monitor (seventh tab, `--monitor`)

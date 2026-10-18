@@ -48,6 +48,10 @@ HotkeyHound.exe --scan --report 我的报告.html
 HotkeyHound.exe --listen --seconds 30
 ```
 
+**32 位进程**：Windows 只允许钩子注入到与安装者**同位数**的进程。本程序是 64 位，所以开始监听时会
+自动再拉起一个很小的 32 位宿主（`HotkeyHound.Helper32.exe`）来装 32 位钩子；两条链路的记录进入同一张表，
+每条都标注目标进程的位数（x64 / x86）。32 位宿主启动失败只影响 32 位覆盖，原因会写进日志，64 位路径不受影响。
+
 **风险**：这一项会安装全局钩子，且会把原生 DLL 注入到当前会话的每个进程。因此：
 
 - **只有你显式点「开始监听」时才安装**，点「停止监听」立刻卸载；
@@ -203,7 +207,9 @@ HotkeyHound.exe --attribute-all --yes --report 归属报告.html --max 30
 
 ## 9. 已知限制
 
-- **看不到 32 位进程**：本程序是 64 位，注入的 hook DLL 也是 x64，覆盖不到正在运行的 32 位进程的归属。
+- **32 位覆盖依赖额外的 32 位宿主**：Windows 不允许 64 位钩子注入 32 位进程，所以 32 位进程由开始监听时
+  自动拉起的 32 位宿主覆盖；若它被安全软件拦截、或被释放/启动失败，这部分归属会缺失，原因写在本程序日志里。
+  归属列表和报告里每行都标注目标进程的位数（x64 / x86）。
 - **钩子型热键不走 WM_HOTKEY**：用键盘钩子实现的热键（键盘管理器、输入法、AutoHotkey）不会出现在
   引擎 A 的占用表里，也不会触发引擎 B 的归属报告。
 - **只覆盖当前会话**：别的登录会话的热键看不到。
@@ -236,7 +242,8 @@ A：命令行加 `--lang en`，或在「报告与关于」页 / 帮助窗口里�
 HotkeyHound 是绿色单文件程序，**没有安装程序、不写注册表**：
 
 - 直接删除 `HotkeyHound.exe` 即可。
-- 程序会在 `%LOCALAPPDATA%\HotkeyHound\`（或 exe 同目录）下释放一个用于引擎 B 的原生 DLL
-  （`HotkeyHound.Hook.dll`）以及 `settings.ini`。删除该目录即可。
+- 程序会在 `%LOCALAPPDATA%\HotkeyHound\`（或 exe 同目录）下释放引擎 B 用的原生 DLL
+  （`HotkeyHound.Hook.dll`）、32 位链路的两个产物（`hooks\x86\HotkeyHound.Hook32.dll` 与
+  `HotkeyHound.Helper32.exe`）以及 `settings.ini`。删除该目录即可。
 - 引擎 B 的 DLL 会被注入到当前会话的进程里；这些注入**在进程重启后自然消失**，
   **重启电脑可彻底清除**。停止监听时本程序也会调用 `UnhookWindowsHookEx` 卸载钩子。

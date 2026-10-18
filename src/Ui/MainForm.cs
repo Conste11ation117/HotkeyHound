@@ -176,39 +176,8 @@ namespace HotkeyHound.Ui
             {
                 parts.Add(L10n.T("ui.banner.notAdmin"));
             }
-            if (Environment.Is64BitProcess && Has32BitProcess())
-            {
-                parts.Add(L10n.T("ui.banner.x64"));
-            }
             if (parts.Count == 0) return null;
             return L10n.T("ui.banner.prefix") + string.Join("　", parts.ToArray());
-        }
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool IsWow64Process(IntPtr hProcess, out bool wow64);
-
-        /// <summary>是否真的有 32 位进程在运行（决定要不要显示 x64 覆盖不到 32 位的提示）。</summary>
-        private static bool Has32BitProcess()
-        {
-            try
-            {
-                foreach (System.Diagnostics.Process p in System.Diagnostics.Process.GetProcesses())
-                {
-                    try
-                    {
-                        IntPtr h;
-                        try { h = p.Handle; }
-                        catch (Exception) { h = IntPtr.Zero; }
-                        if (h == IntPtr.Zero) continue;
-                        bool wow;
-                        if (IsWow64Process(h, out wow) && wow) return true;
-                    }
-                    catch (Exception) { }
-                    finally { try { p.Dispose(); } catch (Exception) { } }
-                }
-            }
-            catch (Exception) { }
-            return false;
         }
 
         public bool IsScanning

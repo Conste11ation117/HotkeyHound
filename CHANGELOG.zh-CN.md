@@ -4,6 +4,50 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] — 2026-10-18 同伴
+
+### 新增：32 位（WOW64）进程的热键归属
+
+Windows 只允许钩子注入到与安装它的进程**同位数**的进程里。因此 x64 版本对每一个 32 位进程的
+`WM_HOTKEY` 都是瞎的——这是对比表里我们唯一明显落后的一项。64 位进程没办法从内部绕开这条规则，
+所以 1.3.0 多带一个小进程：
+
+- `HotkeyHound.Hook32.dll`：同一份 `src/Hook/HookDll.cpp` 用 `vcvars32 + cl /LD` 再编一遍
+  （`PE Machine=0x014C`），装 `WH_GETMESSAGE`、按同样的方式上报持有者 PID。
+- `HotkeyHound.Helper32.exe`：32 位控制台宿主，负责释放 DLL、`LoadLibrary` →
+  `GetProcAddress("HotkeyHoundHookProc")` → `SetWindowsHookEx(WH_GETMESSAGE, proc, hMod, 0)` 并泵消息。
+  它绝不把托管委托交给 `SetWindowsHookEx`：委托地址只在本进程有效，注入出去会让每个 GUI 进程一起崩
+  （见 `AGENTS.md`）。
+- `AttributionEngine.Start()` 让 32 位宿主与 x64 钩子并行启动。释放或启动失败只记日志、只丢失 32 位
+  覆盖，x64 路径照常工作。`Stop()` 先往宿主 stdin 写 `q`，等 2 秒，仍未退出才强制结束；宿主自己也会用
+  `OpenProcess(SYNCHRONIZE)` 守着父进程，父进程一死立刻退出——HotkeyHound 崩溃也不会留下僵尸进程。
+- `AttributionRecord.Bitness`（`x64` / `x86`）由目标进程本身判定，界面列表与报告都会显示，
+  每一行都能看出是哪条注入链路抓到的；`--listen` 的控制台表格也带这一列。
+
+### 修复：共享内存控制块与位数相关
+
+原来的握手块是 `struct { DWORD magic; HWND ctl; DWORD arm; }`。`HWND` 在 32 位进程里是 4 字节、
+64 位里是 8 字节，于是 x86 钩子读 `arm` 的位置正好落在 x64 控制器写的句柄字段里（读到 0），
+整条 32 位上报链路永远不会触发。现在两边统一成**四个 4 字节字段**：
+
+```c
+struct { DWORD magic; DWORD arm; DWORD ctlLo; DWORD ctlHi; }
+```
+
+DLL 用 `(HWND)(((ULONGLONG)ctlHi << 32) | ctlLo)` 还原窗口句柄，控制器把 `(long)hwnd` 拆成 lo/hi。
+同一块映射现在对两种位数都成立。
+
+顺手修掉了产物释放的一个隐患：原来只比较文件长度，长度相同的旧 DLL 会被当成「已是最新」而不覆盖。
+共享内存布局一改，这会让旧的 x64 DLL 静默留在 `%LOCALAPPDATA%` 里，x64 链路直接失效。现在比较字节
+内容，有任何差异就重写。
+
+### 自测与文档
+
+- 自测新增 **T10（32 位链路）**：用 `--selftest-target` 模式启动 32 位宿主，向它的窗口
+  `PostMessage(WM_HOTKEY)`，断言 3 秒内收到 pid 正确、`Bitness=x86` 的归属记录；拿不到时判
+  INCONCLUSIVE（不算失败），并写明卡在哪一步。`--no-hooks` 与 T6/T7 一起跳过 T10。
+- 帮助文档（中/英，Markdown 与 HTML）写明现在覆盖 32 位进程，并解释这个伴随进程。本版按要求不改 README。
+
 ## [1.2.0] — 2026-10-18 哨兵
 
 ### 新增：按键监视（第 7 页 + `--monitor`）

@@ -7,9 +7,14 @@
 // 纪律：绝不吞键，绝不修改消息，处理完必须 CallNextHookEx。
 //
 // 与控制器的握手走共享内存 Local\HotkeyHound.Ctl：
-//   { DWORD magic; HWND ctl; DWORD arm; }
+//   { DWORD magic; DWORD arm; DWORD ctlLo; DWORD ctlHi; }
 // 控制器先创建并写入 ctl 窗口句柄，DLL 每次收到 WM_HOTKEY 都重新读取一次，
 // 这样控制器重开也能跟上（不用重装钩子）。
+//
+// 这份源码同时编 x64 与 x86 两个版本（HotkeyHound.Hook.dll / HotkeyHound.Hook32.dll）：
+// 钩子只能注入与安装者同位数的进程，32 位进程需要另一份 32 位 DLL + 32 位宿主。
+// 两边读写同一块共享内存，所以控制块里绝不能出现指针宽度相关的字段：
+// 曾经用 HWND（x86 4 字节、x64 8 字节）直接放进去，跨位数时 arm 会错位。
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -55,10 +60,21 @@ static void HksDbg(const char* fmt, ...)
 struct HksControl
 {
     DWORD magic;
-    HWND  ctl;
     DWORD arm;
+    // 句柄拆成两个 32 位字段：x86 与 x64 的 HWND 宽度不同，布局必须与位数无关。
+    DWORD ctlLo;
+    DWORD ctlHi;
 };
 #pragma pack(pop)
+
+// 两种位数必须得到同一块 16 字节布局；改字段就同时改 AttributionEngine 的偏移。
+static_assert(sizeof(HksControl) == 16, "HksControl must stay 16 bytes in both x86 and x64");
+
+static HWND ControlWindow(const HksControl* ctl)
+{
+    ULONGLONG v = ((ULONGLONG)ctl->ctlHi << 32) | (ULONGLONG)ctl->ctlLo;
+    return (HWND)(ULONG_PTR)v;
+}
 
 // 只做一次性初始化：INIT_ONCE 保证「成功或失败都只尝试一次」。
 // 钩子过程跑在别人的消息循环里，绝不能反复做文件映射/加锁这类重活，
@@ -99,13 +115,14 @@ static BOOL CALLBACK InitControlOnce(PINIT_ONCE once, PVOID param, PVOID* ctx)
     {
         // 还没人写过（或者对端已退出被复位）：先清干净，等控制器来初始化
         ctl->magic = HKS_MAGIC;
-        ctl->ctl   = NULL;
         ctl->arm   = 0;
+        ctl->ctlLo = 0;
+        ctl->ctlHi = 0;
     }
     g_hMap = h;
     g_pCtl = ctl;
     HksDbg("映射就绪 magic=0x%08lX ctl=%p arm=%lu（本人创建=%lu）",
-           (unsigned long)ctl->magic, (void*)ctl->ctl, (unsigned long)ctl->arm, created);
+           (unsigned long)ctl->magic, (void*)ControlWindow(ctl), (unsigned long)ctl->arm, created);
     return TRUE;
 }
 
@@ -139,15 +156,17 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK HotkeyHoundHookProc(int nCode,
             HksControl* ctl = GetControl();
             if (ctl != NULL)
             {
-                HksDbg(" 控制块 magic=0x%08lX ctl=%p arm=%lu", (unsigned long)ctl->magic, (void*)ctl->ctl, (unsigned long)ctl->arm);
-                if (ctl->magic == HKS_MAGIC && ctl->ctl != NULL && ctl->arm != 0)
+                HWND ctlWindow = ControlWindow(ctl);
+                HksDbg(" 控制块 magic=0x%08lX ctl=%p arm=%lu",
+                       (unsigned long)ctl->magic, (void*)ctlWindow, (unsigned long)ctl->arm);
+                if (ctl->magic == HKS_MAGIC && ctlWindow != NULL && ctl->arm != 0)
                 {
                     // wParam = 本进程 pid（归属答案），lParam = 热键的修饰键+VK
-                    BOOL ok = PostMessageW(ctl->ctl, HKS_WM_REPORT,
+                    BOOL ok = PostMessageW(ctlWindow, HKS_WM_REPORT,
                                            (WPARAM)GetCurrentProcessId(),
                                            (LPARAM)msg->lParam);
                     HksDbg(" 上报 PostMessage(%p, 0x%X, pid=%lu) = %s（err=%lu）",
-                           (void*)ctl->ctl, (unsigned)HKS_WM_REPORT, (unsigned long)GetCurrentProcessId(),
+                           (void*)ctlWindow, (unsigned)HKS_WM_REPORT, (unsigned long)GetCurrentProcessId(),
                            ok ? "成功" : "失败", ok ? 0 : GetLastError());
                 }
             }

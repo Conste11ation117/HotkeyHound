@@ -49,6 +49,12 @@ investigate; or from the command line:
 HotkeyHound.exe --listen --seconds 30
 ```
 
+**32-bit processes**: Windows only lets a hook inject into processes of the **same bitness** as the
+installer. This program is 64-bit, so when listening starts it also launches a tiny 32-bit companion
+(`HotkeyHound.Helper32.exe`) that installs the 32-bit hook. Records from both paths land in the same table,
+and every row labels the target process's bitness (x64 / x86). A failed companion only costs 32-bit
+coverage — the reason is written to the log and the 64-bit path keeps working.
+
 **Risk**: this one installs a global hook and injects the native DLL into every process in the session.
 Therefore:
 
@@ -230,8 +236,10 @@ keyboard-like group/driver name are **listed only**. The tool never judges, stop
 
 ## 9. Known limitations
 
-- **32-bit processes are invisible**: this program is 64-bit and the injected hook DLL is x64, so attribution
-  for running 32-bit processes is not covered.
+- **32-bit coverage depends on a separate 32-bit host**: Windows does not let a 64-bit hook inject into a
+  32-bit process, so 32-bit coverage comes from a companion started automatically when listening begins.
+  If security software blocks it, or it cannot be extracted/started, that coverage is missing — the reason
+  is in this program's log. Every attribution row and report row labels the target's bitness (x64 / x86).
 - **Hook-based hotkeys do not go through WM_HOTKEY**: hotkeys implemented with keyboard hooks (Keyboard
   Manager, IMEs, AutoHotkey) neither appear in engine A's occupancy table nor trigger engine B's reports.
 - **Only the current session is covered**: hotkeys in other login sessions are invisible.
@@ -269,7 +277,8 @@ window (restart the program for it to take effect).
 HotkeyHound is a portable single-file program with **no installer and no registry writes**:
 
 - Just delete `HotkeyHound.exe`.
-- The program extracts a native DLL used by engine B (`HotkeyHound.Hook.dll`) and `settings.ini` under
+- The program extracts the native DLL used by engine B (`HotkeyHound.Hook.dll`), the two 32-bit artifacts
+  (`hooks\x86\HotkeyHound.Hook32.dll` and `HotkeyHound.Helper32.exe`) and `settings.ini` under
   `%LOCALAPPDATA%\HotkeyHound\` (or next to the exe). Deleting that directory is enough.
 - Engine B's DLL is injected into processes in the current session; those injections **disappear naturally
   when the processes restart**, and **rebooting clears them completely**. When you stop listening, this program

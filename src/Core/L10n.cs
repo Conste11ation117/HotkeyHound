@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -219,12 +219,14 @@ namespace HotkeyHound.Core
             A("app.versionNote",
               "四个引擎全部可用：A 占用扫描、B 按键归属、C 钩子窃取检测、D 配置聚合。"
               + "A/D 只读、不需要管理员；B/C 需要安装钩子（仅在显式点「开始监听」/「布防」时），"
-              + "管理员权限下覆盖最全，并已在真机验证。",
+              + "管理员权限下覆盖最全。x64 与 32 位进程的归属都已覆盖（后者由自动拉起的 32 位宿主提供），"
+              + "并已在真机验证。",
               "All four engines are available: A occupancy scan, B key attribution, "
               + "C hook interception detection, D config aggregation. "
               + "A/D are read-only and need no administrator rights; B/C install hooks "
-              + "(only when you explicitly click Listen / Arm), cover the most as administrator, "
-              + "and have been verified on a real machine.");
+              + "(only when you explicitly click Listen / Arm), cover the most as administrator. "
+              + "Attribution now covers both x64 and 32-bit processes (the latter through a 32-bit "
+              + "companion host started automatically), and has been verified on a real machine.");
             A("common.unknown", "未知", "Unknown");
             A("common.yes", "是", "Yes");
             A("common.no", "否", "No");
@@ -261,6 +263,8 @@ namespace HotkeyHound.Core
 
             A("cli.scan.start", "正在运行引擎 A（占用扫描）+ 引擎 D（配置聚合）…",
               "Running engine A (occupancy scan) + engine D (config aggregation)…");
+            A("cli.alreadyRunning", "HotkeyHound 已在运行，已把现有窗口切到前台。",
+              "HotkeyHound is already running; brought its window to the front.");
             A("cli.scan.failed", "扫描失败：{0}", "Scan failed: {0}");
             A("cli.scan.reportWritten", "报告已写入：{0}", "Report written: {0}");
             A("cli.scan.reportWriteFailed", "报告写入失败：{0}", "Failed to write report: {0}");
@@ -375,8 +379,8 @@ namespace HotkeyHound.Core
               "                                                Run engines A + D, generate an HTML report");
             A("cli.help.listen", "  HotkeyHound.exe --listen [--seconds N]         按键归属监听（引擎 B），N 默认 30 秒",
               "  HotkeyHound.exe --listen [--seconds N]         Key attribution listener (engine B), N defaults to 30");
-            A("cli.help.listenDesc", "                                                 需要管理员才有完整覆盖；用 --elevate 可提权重启",
-              "                                                 Administrator gives full coverage; --elevate relaunches elevated");
+            A("cli.help.listenDesc", "                                                 需要管理员才有完整覆盖；用 --elevate 可提权重启；32 位进程由自动拉起的 32 位宿主覆盖",
+              "                                                 Administrator gives full coverage; --elevate relaunches elevated; 32-bit processes are covered by an automatically started 32-bit host");
             A("cli.help.monitor", "  HotkeyHound.exe --monitor [--seconds N]        按键监视（Raw Input + 低层钩子），N 默认 15 秒",
               "  HotkeyHound.exe --monitor [--seconds N]        Key monitor (raw input + low-level hook), N defaults to 15");
             A("cli.help.monitorDesc", "                                                 会安装 WH_KEYBOARD_LL；只观察、不吞键，不结束任何进程",
@@ -539,6 +543,59 @@ namespace HotkeyHound.Core
             A("attr.note.badParam", "无法解析热键参数", "Could not parse the hotkey parameter");
             A("attr.note.noProc", "拿不到进程信息（可能已退出，或权限不足）",
               "Could not get process info (it may have exited, or permissions are insufficient)");
+
+            // 32 位伴随宿主：钩子只能注入同位数的进程，32 位归属由另一个 32 位进程提供。
+            A("ui.at.col.bitness", "位数", "Bitness");
+            A("ui.at.helper32", "　32 位宿主：{0}", "  32-bit host: {0}");
+
+            A("helper32.note.extracted", "32 位产物已释放：{0}（{1:N0} 字节）",
+              "32-bit artifact extracted: {0} ({1:N0} bytes)");
+            A("helper32.note.resourceFailed", "读取内嵌资源 {0} 失败：{1}",
+              "Failed to read embedded resource {0}: {1}");
+            A("helper32.note.noResource",
+              "程序里没有内嵌 {0}（构建时 32 位产物没编出来？）",
+              "{0} is not embedded in the program (was the 32-bit build skipped?)");
+            A("helper32.note.dirFailed", "32 位产物释放目录不可用，已跳过：{0} → {1}",
+              "Directory for the 32-bit artifact is unusable, skipped: {0} → {1}");
+            A("helper32.note.allFailed", "所有候选目录都写不进去。最后一次：{0}",
+              "No candidate directory is writable. Last failure: {0}");
+            A("helper32.log.extractFailed", "32 位产物释放失败：{0}",
+              "Failed to extract the 32-bit artifacts: {0}");
+            A("helper32.log.startFailed", "32 位宿主启动失败：{0}",
+              "Failed to start the 32-bit companion: {0}");
+            A("helper32.log.started", "32 位宿主已启动：pid={0}，exe={1}",
+              "32-bit companion started: pid={0}, exe={1}");
+            A("helper32.log.failed", "32 位宿主不可用（32 位进程的归属将缺失）：{0}",
+              "The 32-bit companion is unavailable (attribution for 32-bit processes will be missing): {0}");
+            A("helper32.log.timeout",
+              "32 位宿主在 {0} 毫秒内没有就绪（32 位进程的归属缺失）；最后一行：{1}",
+              "The 32-bit companion did not become ready within {0} ms (attribution for 32-bit processes "
+              + "is missing); last line: {1}");
+            A("helper32.log.readyNoHook",
+              "32 位宿主已就绪，但 32 位钩子没有装上（32 位进程的归属缺失）：{0}",
+              "The 32-bit companion is ready but its hook is not installed (attribution for 32-bit "
+              + "processes is missing): {0}");
+            A("helper32.log.ready",
+              "32 位宿主就绪：pid={0}，窗口=0x{1:X}，32 位钩子已安装；控制块：{2}",
+              "32-bit companion ready: pid={0}, window=0x{1:X}, 32-bit hook installed; control block: {2}");
+            A("helper32.log.line", "  [helper32] {0}", "  [helper32] {0}");
+            A("helper32.log.stdoutEnded", "32 位宿主的输出流已结束（进程已退出）。",
+              "The 32-bit companion's output stream ended (the process exited).");
+            A("helper32.log.readFailed", "读取 32 位宿主输出失败：{0}",
+              "Failed to read the 32-bit companion's output: {0}");
+            A("helper32.log.exited", "32 位宿主已退出（pid={0}）。",
+              "32-bit companion exited (pid={0}).");
+            A("helper32.log.killed", "32 位宿主没有响应退出请求，已强制结束（pid={0}）。",
+              "The 32-bit companion did not respond to the exit request and was terminated (pid={0}).");
+            A("helper32.log.stopFailed", "结束 32 位宿主时出错：{0}",
+              "Error while stopping the 32-bit companion: {0}");
+            A("helper32.ui.running", "32 位宿主运行中（PID {0}）",
+              "32-bit host running (PID {0})");
+            A("helper32.ui.noHook", "32 位宿主在跑，但 32 位钩子没装上",
+              "32-bit host is running but its hook is not installed");
+            A("helper32.ui.off", "32 位宿主未启动", "32-bit host not started");
+            A("helper32.ui.failed", "32 位宿主不可用（32 位进程覆盖缺失）",
+              "32-bit host unavailable (no 32-bit coverage)");
         }
 
         private static void BuildScanLog()
@@ -755,12 +812,16 @@ namespace HotkeyHound.Core
               "<li><b>\"Registration failed\" is not the same as \"software occupancy\".</b> A few combinations "
               + "(e.g. some panel function keys) return errors other than 1409; the report lists the error code, "
               + "so read the remarks carefully.</li>");
-            A("rep.method.miss.h", "为什么可能漏掉 32 位或提权进程",
-              "Why 32-bit or elevated processes may be missed");
+            A("rep.method.miss.h", "为什么可能漏掉某些进程",
+              "Why some processes may be missed");
             A("rep.method.miss.b1",
-              "<li>本程序是 64 位，注入的 hook DLL 也是 x64，因此看不到 32 位进程的按键归属。</li>",
-              "<li>This program is 64-bit and the injected hook DLL is x64, so key attribution for 32-bit "
-              + "processes is invisible.</li>");
+              "<li><b>32 位进程需要额外的 32 位宿主。</b>Windows 只允许钩子注入与安装者同位数的进程，"
+              + "因此 32 位进程的归属由本程序自动拉起的 32 位伴随宿主覆盖；如果它启动失败"
+              + "（日志里会写明原因），这部分归属就会缺失。归属表里每行都标了目标进程的位数。</li>",
+              "<li><b>32-bit processes need an extra 32-bit host.</b> Windows only lets a hook inject into "
+              + "processes of the same bitness, so attribution for 32-bit processes comes from a 32-bit "
+              + "companion process this program starts automatically; if it fails to start (the log says "
+              + "why), that coverage is missing. Every attribution row labels the target process's bitness.</li>");
             A("rep.method.miss.b2",
               "<li>非管理员运行时，针对提权进程（例如以管理员身份运行的 PowerToys）拿不到进程信息。",
               "<li>When not run as administrator, process info for elevated processes (e.g. PowerToys running as "
@@ -821,10 +882,6 @@ namespace HotkeyHound.Core
               "非管理员：看不到以管理员身份运行的提权进程（例如 PowerToys）。可点右侧按钮提权重启。",
               "Not an administrator: elevated processes (e.g. PowerToys) are invisible. Click the button on the "
               + "right to relaunch elevated.");
-            A("ui.banner.x64",
-              "本程序是 64 位：注入的 hook DLL 也是 x64，覆盖不到正在运行的 32 位进程的按键归属。",
-              "This program is 64-bit and the injected hook DLL is x64, so key attribution for running 32-bit "
-              + "processes is not covered.");
             A("ui.banner.elevate", "提权重启", "Relaunch elevated");
             A("ui.log.started", "HotkeyHound 已启动，版本 {0}", "HotkeyHound started, version {0}");
             A("ui.log.admin", "管理员权限：{0}", "Administrator: {0}");
@@ -1022,7 +1079,8 @@ namespace HotkeyHound.Core
               + "或「开始监视」时才安装钩子；程序加载页面不会安装任何钩子。\r\n"
               + "· 用键盘钩子实现的热键（PowerToys 键盘管理器、AutoHotkey、输入法）不会占 RegisterHotKey，"
               + "因此引擎 A 会把它们报成「空闲」——报告里靠引擎 D 的配置声明补上。\r\n"
-              + "· 非管理员运行时看不到提权进程的热键归属；本程序是 x64，覆盖不到 32 位进程。\r\n"
+              + "· 非管理员运行时看不到提权进程的热键归属；32 位进程由单独的 32 位宿主覆盖，"
+              + "宿主启动失败时这部分会缺失（日志里有原因）。\r\n"
               + "· 按键监视只列出键盘类过滤驱动供参考，不判定、不停止、不卸载任何驱动。\r\n"
               + "· 本工具全程只读：不写配置、不改注册表、注册的热键立刻注销。",
               "Known limitations:\r\n"
@@ -1032,8 +1090,9 @@ namespace HotkeyHound.Core
               + "· Hotkeys implemented with keyboard hooks (PowerToys Keyboard Manager, AutoHotkey, IMEs) do "
               + "not use RegisterHotKey, so engine A reports them as \"free\" — the report fills the gap with "
               + "engine D's config declarations.\r\n"
-              + "· When not run as administrator, attribution for elevated processes is invisible; this "
-              + "program is x64 and does not cover 32-bit processes.\r\n"
+              + "· When not run as administrator, attribution for elevated processes is invisible; 32-bit "
+              + "processes are covered by a separate 32-bit companion host, and that coverage is missing if "
+              + "the host fails to start (the log says why).\r\n"
               + "· The key monitor lists keyboard-class filter drivers for reference only; it never judges, "
               + "stops or unloads a driver.\r\n"
               + "· The tool is read-only throughout: it writes no config, does not touch the registry, and "

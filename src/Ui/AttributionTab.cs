@@ -122,8 +122,9 @@ namespace HotkeyHound.Ui
             _list.Columns.Add(L10n.T("ui.at.col.time"), 90);
             _list.Columns.Add(L10n.T("ui.at.col.process"), 170);
             _list.Columns.Add(L10n.T("ui.at.col.pid"), 70);
+            _list.Columns.Add(L10n.T("ui.at.col.bitness"), 60);
             _list.Columns.Add(L10n.T("ui.col.combo"), 160);
-            _list.Columns.Add(L10n.T("ui.col.path"), 320);
+            _list.Columns.Add(L10n.T("ui.col.path"), 300);
             _list.Columns.Add(L10n.T("ui.at.col.elevated"), 80);
 
             var autoHeader = new Label();
@@ -202,6 +203,7 @@ namespace HotkeyHound.Ui
                 var item = new ListViewItem(record.Time.ToString("HH:mm:ss"));
                 item.SubItems.Add(string.IsNullOrEmpty(record.ProcessName) ? L10n.T("attr.unknownProc") : record.ProcessName);
                 item.SubItems.Add(record.Pid.ToString());
+                item.SubItems.Add(string.IsNullOrEmpty(record.Bitness) ? "?" : record.Bitness);
                 item.SubItems.Add(record.Combo == null ? L10n.T("attr.unknownCombo") : record.Combo.Display());
                 item.SubItems.Add(string.IsNullOrEmpty(record.ProcessPath) ? L10n.T("ui.at.unknownPath") : record.ProcessPath);
                 item.SubItems.Add(record.IsElevated ? L10n.T("common.yes") : L10n.T("common.no"));
@@ -259,7 +261,8 @@ namespace HotkeyHound.Ui
             {
                 _toggleButton.Text = L10n.T("ui.at.stop");
                 _statusLabel.ForeColor = UiTheme.Success;
-                _statusLabel.Text = L10n.T("ui.at.listening");
+                _statusLabel.Text = L10n.T("ui.at.listening")
+                                    + L10n.F("ui.at.helper32", engine.Helper32.StatusText);
             }
             else
             {

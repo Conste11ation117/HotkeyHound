@@ -3,7 +3,10 @@
 #
 # 本机没有 .NET SDK / 没有 .NET Framework 引用程序集，因此直接调用 VS 自带的
 # Roslyn csc.exe，并以 -nostdlib+ 显式引用 .NET Framework 4.8 的运行时程序集。
-# 原生 hook DLL 先用 vcvars64 + cl 编译，再作为资源内嵌进 exe。
+#
+# 原生部分要编两个位数：钩子只能注入与安装者同位数的进程，所以除了 x64 的
+# HotkeyHound.Hook.dll，还需要 x86 的 HotkeyHound.Hook32.dll 和装它的 32 位宿主
+# HotkeyHound.Helper32.exe。四者最终只有 HotkeyHound.exe 对外分发，另外三个内嵌为资源。
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -26,15 +29,45 @@ function Find-Tool([string]$relative) {
   return $null
 }
 
-$csc    = Find-Tool 'MSBuild\Current\Bin\Roslyn\csc.exe'
-$vcvars = Find-Tool 'VC\Auxiliary\Build\vcvars64.bat'
-$fx     = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
+$csc     = Find-Tool 'MSBuild\Current\Bin\Roslyn\csc.exe'
+$vcvars64 = Find-Tool 'VC\Auxiliary\Build\vcvars64.bat'
+$vcvars32 = Find-Tool 'VC\Auxiliary\Build\vcvars32.bat'
+$fx      = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
+$fx32    = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319'
 
-if (-not $csc)    { throw '找不到 Roslyn csc.exe：请安装 Visual Studio（含 .NET 桌面开发工作负载）或 Build Tools' }
-if (-not $vcvars) { throw '找不到 vcvars64.bat：请安装 Visual Studio 的「使用 C++ 的桌面开发」工作负载' }
+if (-not $csc)     { throw '找不到 Roslyn csc.exe：请安装 Visual Studio（含 .NET 桌面开发工作负载）或 Build Tools' }
+if (-not $vcvars64) { throw '找不到 vcvars64.bat：请安装 Visual Studio 的「使用 C++ 的桌面开发」工作负载' }
+if (-not $vcvars32) { throw '找不到 vcvars32.bat：请安装 Visual Studio 的「使用 C++ 的桌面开发」工作负载（x86 工具集）' }
 if (-not (Test-Path (Join-Path $fx 'mscorlib.dll'))) { throw "找不到 .NET Framework 运行时程序集：$fx" }
-Write-Host ("csc    = " + $csc) -ForegroundColor DarkGray
-Write-Host ("vcvars = " + $vcvars) -ForegroundColor DarkGray
+if (-not (Test-Path (Join-Path $fx32 'mscorlib.dll'))) { $fx32 = $fx }
+Write-Host ("csc     = " + $csc) -ForegroundColor DarkGray
+Write-Host ("vcvars64 = " + $vcvars64) -ForegroundColor DarkGray
+Write-Host ("vcvars32 = " + $vcvars32) -ForegroundColor DarkGray
+
+# 读 PE 头里的 Machine 字段，确认产物位数没有搞反（0x8664=x64，0x014C=x86）。
+# 这样构建自己就能证明位数，不必再手工跑 dumpbin。
+function Get-PeMachine([string]$path) {
+  $stream = [System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+  try {
+    $reader = New-Object System.IO.BinaryReader($stream)
+    if ($stream.Length -lt 0x40) { return 0 }
+    $stream.Position = 0x3C
+    $peOffset = $reader.ReadInt32()
+    if ($peOffset -le 0 -or $peOffset -gt ($stream.Length - 6)) { return 0 }
+    $stream.Position = $peOffset + 4
+    return [int]$reader.ReadUInt16()
+  } finally {
+    $stream.Dispose()
+  }
+}
+
+function Assert-PeMachine([string]$path, [int]$expected, [string]$label) {
+  $machine = Get-PeMachine $path
+  if ($machine -ne $expected) {
+    throw ("{0} 的位数不对：PE Machine=0x{1:X4}，期望 0x{2:X4}（文件：{3}）" -f $label, $machine, $expected, $path)
+  }
+  Write-Host ('  {0}：PE Machine=0x{1:X4}（{2}）' -f (Split-Path -Leaf $path), $machine, $label) -ForegroundColor DarkGreen
+}
 
 $buildDir = Join-Path $root 'build'
 $distDir  = Join-Path $root 'dist'
@@ -42,31 +75,72 @@ if (Test-Path $buildDir) { Remove-Item $buildDir -Recurse -Force }
 New-Item -ItemType Directory -Path $buildDir | Out-Null
 if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
 
-# ---------------------------------------------------------------- 1) 原生 hook DLL
+# ---------------------------------------------------------------- 1) 原生 hook DLL（两个位数）
 $nativeDir = Join-Path $buildDir 'native'
 New-Item -ItemType Directory -Path $nativeDir | Out-Null
 $cppFile = Join-Path $root 'src\Hook\HookDll.cpp'
 $defFile = Join-Path $root 'src\Hook\HookDll.def'
-$hookDll = Join-Path $nativeDir 'HotkeyHound.Hook.dll'
-
-if (-not (Test-Path $vcvars)) { throw "找不到 vcvars64.bat：$vcvars" }
+$hookDll   = Join-Path $nativeDir 'HotkeyHound.Hook.dll'
+$hook32Dll = Join-Path $nativeDir 'HotkeyHound.Hook32.dll'
 
 Write-Host '正在编译原生 hook DLL（cl, MSVC x64, /LD /MT）...' -ForegroundColor Cyan
-$clLine = 'call "' + $vcvars + '" >nul && cl /nologo /LD /MT /O2 /W3 /EHsc /utf-8 /DUNICODE /D_UNICODE ' `
+$clLine = 'call "' + $vcvars64 + '" >nul && cl /nologo /LD /MT /O2 /W3 /EHsc /utf-8 /DUNICODE /D_UNICODE ' `
         + '/FeHotkeyHound.Hook.dll "' + $cppFile + '" /link /DEF:"' + $defFile + '" user32.lib kernel32.lib'
 Push-Location $nativeDir
 try {
   & cmd.exe /c $clLine
   if ($LASTEXITCODE -ne 0) { throw "原生 DLL 编译失败，cl 退出码 $LASTEXITCODE" }
 } finally { Pop-Location }
-
 if (-not (Test-Path $hookDll)) { throw "原生 DLL 没有产出：$hookDll" }
-$hookSize = (Get-Item $hookDll).Length
-Write-Host ('原生 hook DLL 编译成功：{0} ({1:N0} 字节)' -f $hookDll, $hookSize) -ForegroundColor Green
 
-# ---------------------------------------------------------------- 2) 托管程序
+Write-Host '正在编译 32 位原生 hook DLL（cl, MSVC x86, /LD /MT）...' -ForegroundColor Cyan
+$clLine32 = 'call "' + $vcvars32 + '" >nul && cl /nologo /LD /MT /O2 /W3 /EHsc /utf-8 /DUNICODE /D_UNICODE ' `
+          + '/FeHotkeyHound.Hook32.dll "' + $cppFile + '" /link /DEF:"' + $defFile + '" user32.lib kernel32.lib'
+Push-Location $nativeDir
+try {
+  & cmd.exe /c $clLine32
+  if ($LASTEXITCODE -ne 0) { throw "32 位原生 DLL 编译失败，cl 退出码 $LASTEXITCODE" }
+} finally { Pop-Location }
+if (-not (Test-Path $hook32Dll)) { throw "32 位原生 DLL 没有产出：$hook32Dll" }
+
+Assert-PeMachine $hookDll 0x8664 'x64 hook DLL'
+Assert-PeMachine $hook32Dll 0x014C 'x86 hook DLL'
+$hookSize = (Get-Item $hookDll).Length
+$hook32Size = (Get-Item $hook32Dll).Length
+Write-Host ('原生 hook DLL 编译成功：{0} ({1:N0} 字节)、{2} ({3:N0} 字节)' -f $hookDll, $hookSize, $hook32Dll, $hook32Size) -ForegroundColor Green
+
+# ---------------------------------------------------------------- 2) 32 位宿主（x86 控制台程序）
+$helper32 = Join-Path $buildDir 'HotkeyHound.Helper32.exe'
+$helperSource = Join-Path $root 'src\Helper32\Helper32Main.cs'
+if (-not (Test-Path $helperSource)) { throw "找不到 32 位宿主源码：$helperSource" }
+
+# 32 位宿主用 32 位运行时程序集编译，避免 -platform:x86 引用 64 位目录里的 mscorlib。
+$helperRefs = @('mscorlib.dll', 'System.dll', 'System.Core.dll') | ForEach-Object { '-r:' + (Join-Path $fx32 $_) }
+$helperArgs = @(
+  '-nologo',
+  '-nostdlib+',
+  '-langversion:7.3',
+  '-platform:x86',
+  '-target:exe',
+  '-codepage:65001',
+  '-optimize+',
+  '-warn:4',
+  "-out:$helper32"
+) + $helperRefs + @($helperSource)
+
+Write-Host '正在编译 32 位宿主 HotkeyHound.Helper32.exe（csc.exe, x86）...' -ForegroundColor Cyan
+& $csc $helperArgs
+if ($LASTEXITCODE -ne 0) { throw "32 位宿主编译失败，csc 退出码 $LASTEXITCODE" }
+if (-not (Test-Path $helper32)) { throw "32 位宿主没有产出：$helper32" }
+Assert-PeMachine $helper32 0x014C 'x86 helper'
+$helper32Size = (Get-Item $helper32).Length
+Write-Host ('32 位宿主编译成功：{0} ({1:N0} 字节)' -f $helper32, $helper32Size) -ForegroundColor Green
+
+# ---------------------------------------------------------------- 3) 托管主程序
 $sources = @()
-$sources += Get-ChildItem -Path (Join-Path $root 'src')   -Filter *.cs -Recurse | ForEach-Object { $_.FullName }
+$sources += Get-ChildItem -Path (Join-Path $root 'src') -Filter *.cs -Recurse |
+            Where-Object { $_.FullName -notmatch '[\\/]Helper32[\\/]' } |
+            ForEach-Object { $_.FullName }
 $sources += Get-ChildItem -Path (Join-Path $root 'tests') -Filter *.cs -Recurse | ForEach-Object { $_.FullName }
 if ($sources.Count -eq 0) { throw '没有找到任何 C# 源文件' }
 
@@ -109,6 +183,8 @@ $cscArgs = @(
   "-win32manifest:$manifest",
   "-win32icon:$icon",
   "-resource:$hookDll,HotkeyHound.Hook.dll",
+  "-resource:$hook32Dll,HotkeyHound.Hook32.dll",
+  "-resource:$helper32,HotkeyHound.Helper32.exe",
   "-resource:$helpZh,help.zh-CN.html",
   "-resource:$helpEn,help.en-US.html",
   "-resource:$catalog,hook-catalog.json"
@@ -117,6 +193,7 @@ $cscArgs = @(
 Write-Host '正在编译 HotkeyHound.exe（csc.exe, .NET Framework 4.8, C# 7.3）...' -ForegroundColor Cyan
 & $csc $cscArgs
 if ($LASTEXITCODE -ne 0) { throw "编译失败，csc 退出码 $LASTEXITCODE" }
+Assert-PeMachine $out 0x8664 'x64 主程序'
 
 $distExe = Join-Path $distDir 'HotkeyHound.exe'
 try {
@@ -126,4 +203,6 @@ try {
 }
 
 $size = (Get-Item $distExe).Length
-Write-Host ('构建成功：{0} ({1:N0} 字节，内嵌 hook DLL {2:N0} 字节)' -f $distExe, $size, $hookSize) -ForegroundColor Green
+Write-Host ('构建成功：{0} ({1:N0} 字节)' -f $distExe, $size) -ForegroundColor Green
+Write-Host ('  内嵌：HotkeyHound.Hook.dll (x64) {0:N0} 字节、HotkeyHound.Hook32.dll (x86) {1:N0} 字节、HotkeyHound.Helper32.exe (x86) {2:N0} 字节' -f $hookSize, $hook32Size, $helper32Size) -ForegroundColor Green
+Write-Host ('  构建中间产物：{0}' -f $buildDir) -ForegroundColor DarkGray

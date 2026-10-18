@@ -273,6 +273,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
               .Append("<th style=\"width:96px\">").Append(Html.Escape(L10n.T("ui.at.col.time"))).Append("</th>")
               .Append("<th>").Append(Html.Escape(L10n.T("ui.at.col.process"))).Append("</th>")
               .Append("<th style=\"width:70px\">").Append(Html.Escape(L10n.T("ui.at.col.pid"))).Append("</th>")
+              .Append("<th style=\"width:60px\">").Append(Html.Escape(L10n.T("ui.at.col.bitness"))).Append("</th>")
               .Append("<th style=\"width:180px\">").Append(Html.Escape(L10n.T("ui.col.combo"))).Append("</th>")
               .Append("<th>").Append(Html.Escape(L10n.T("ui.col.path"))).Append("</th>")
               .Append("</tr></thead><tbody>\r\n");
@@ -283,6 +284,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
                 if (r.IsElevated) sb.Append(" <span class=\"hint\">" + Html.Escape(L10n.T("attr.elevatedTag").Trim()) + "</span>");
                 sb.Append("</td>");
                 sb.Append("<td>").Append(r.Pid).Append("</td>");
+                sb.Append("<td>").Append(string.IsNullOrEmpty(r.Bitness) ? "?" : Html.Escape(r.Bitness)).Append("</td>");
                 sb.Append("<td class=\"k\">").Append(r.Combo == null ? "<span class=\"hint\">" + Html.Escape(L10n.T("attr.unknownCombo")) + "</span>" : Html.Escape(r.Combo.Display())).Append("</td>");
                 sb.Append("<td class=\"hint\">").Append(string.IsNullOrEmpty(r.ProcessPath) ? Html.Escape(L10n.T("rep.attribution.pathMissing")) : Html.Escape(r.ProcessPath)).Append("</td>");
                 sb.Append("</tr>\r\n");

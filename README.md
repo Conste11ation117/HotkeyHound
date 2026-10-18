@@ -1,4 +1,4 @@
-﻿# HotkeyHound
+# HotkeyHound
 
 **English** · [简体中文](README.zh-CN.md)
 
@@ -32,9 +32,13 @@ to be honest — where a competitor does something better, it says so.
 | Keys eaten by a **keyboard hook** | only when the press causes something visible | documented blind spot | documented blind spot | **dedicated detector + config catalog, with evidence levels** |
 | Explain *why* a combination is taken | reads PowerToys / ShareX / OBS / AHK configs | — | — | **reads six app families, and prints the config path it used** |
 | Key monitor (stuck modifiers, remaps, filter drivers) | yes | — | — | **yes (1.2.0)** |
-| 32-bit processes | 64-bit only | **32 + 64** | ships x86 and x64 | x64 only (roadmap) |
+| 32-bit processes | 64-bit only | **32 + 64** | ships x86 and x64 | **x64 + x86 (since 1.3.0)** |
 | Report you can hand to someone | — | — | — | **self-contained HTML, bilingual** |
 | Licence | MIT | closed source | GPL-3.0 | MIT |
+
+On 32-bit processes: Windows only lets a hook inject into processes of the same bitness, so
+HotkeyHound ships a small 32-bit companion process that installs a 32-bit hook. Both report into the
+same table, and each row says which bitness it came from.
 
 In practice: **HotkeyScan is the closest peer** — its key monitor is why we built ours, and since 1.2.0 we match it and add hook-suspect evidence on top.
 **Hotkey Screener is the most direct attributor for registered hotkeys**, and

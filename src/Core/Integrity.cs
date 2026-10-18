@@ -283,8 +283,14 @@ namespace HotkeyHound.Core
                     bool needWrite = true;
                     if (File.Exists(target))
                     {
-                        var info = new FileInfo(target);
-                        if (info.Length == bytes.Length) needWrite = false;
+                        // 必须比内容，不能只比长度：共享内存布局改过之后，新旧 DLL 的长度可能一样，
+                        // 只比长度会把旧 DLL 当成「已是最新」而不覆盖，结果是 x64 链路静默失效。
+                        try
+                        {
+                            byte[] existing = File.ReadAllBytes(target);
+                            if (existing.Length == bytes.Length && SameBytes(existing, bytes)) needWrite = false;
+                        }
+                        catch (Exception) { }
                     }
                     if (needWrite)
                     {
@@ -311,6 +317,16 @@ namespace HotkeyHound.Core
 
             LastError = "所有候选目录都写不进去。最后一次：" + (_notes.Count > 0 ? _notes[_notes.Count - 1] : "无候选目录");
             return null;
+        }
+
+        private static bool SameBytes(byte[] a, byte[] b)
+        {
+            if (a == null || b == null || a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] != b[i]) return false;
+            }
+            return true;
         }
     }
 }

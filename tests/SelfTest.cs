@@ -71,11 +71,13 @@ namespace HotkeyHound
                 {
                     Skip("T6", "引擎 B 归属链路", "已按 --no-hooks 跳过（该测试会安装全局钩子并注入 DLL）");
                     Skip("T7", "引擎 C 吞键检测", "已按 --no-hooks 跳过（该测试会安装低层键盘钩子）");
+                    Skip("T10", "32 位归属链路", "已按 --no-hooks 跳过（该测试会安装全局钩子并注入 32 位 DLL）");
                 }
                 else
                 {
                     RunT6();
                     RunT7(firstScan);
+                    RunT10();
                 }
             }
             catch (Exception ex)
@@ -822,6 +824,173 @@ namespace HotkeyHound
             finally
             {
                 try { helper.Dispose(); } catch (Exception) { }
+            }
+        }
+
+        // ---------------------------------------------------------------- T10
+
+        /// <summary>
+        /// 32 位归属链路。Windows 只允许钩子注入与安装者同位数的进程，所以 32 位进程的归属
+        /// 必须由另一个 32 位进程装 32 位 hook DLL 来覆盖。这里启动一个 --selftest-target
+        /// 宿主（它自己装 32 位钩子并注册 Ctrl+Alt+F13），再向它的窗口 PostMessage(WM_HOTKEY)；
+        /// 断言 3 秒内收到 pid 正确、Bitness=x86 的归属记录。拿不到时判 INCONCLUSIVE（不算失败），
+        /// 并写明卡在哪一步。
+        /// </summary>
+        private static void RunT10()
+        {
+            var detail = new StringBuilder();
+            var engine = new AttributionEngine();
+            var engineLog = new List<string>();
+            engine.Logged += delegate (string s) { lock (engineLog) engineLog.Add(s); };
+
+            var host32 = new Helper32Runtime();
+            var hostLog = new List<string>();
+            Action<string> hostLogger = delegate (string s) { lock (hostLog) hostLog.Add(s); };
+
+            try
+            {
+                // ---- 步骤 1：64 位引擎（顺带建好共享内存控制窗口，32 位钩子要往这里上报；
+                //      Start() 也会启动它自己的 32 位宿主）
+                bool started = engine.Start();
+                AppendLog(detail, "engine", engineLog);
+                if (!started)
+                {
+                    string reason = engine.LastError ?? "未知";
+                    Inconclusive("T10", "32 位归属链路",
+                        "失败步骤=装 64 位钩子（共享内存控制窗口也是它建的）：" + reason
+                        + (ProcessIntegrity.IsBelowMedium
+                            ? "；当前进程是" + ProcessIntegrity.Describe(ProcessIntegrity.Current)
+                              + "，UIPI 会挡住钩子注入，请把 exe 复制到普通目录再跑。"
+                            : "。"));
+                    return;
+                }
+
+                detail.Append("    64 位钩子=0x").Append(engine.HookHandle.ToInt64().ToString("X"))
+                      .Append("，控制窗口=0x").Append(engine.ControlWindow.ToInt64().ToString("X"))
+                      .Append("；引擎自带的 32 位宿主：").Append(engine.Helper32.StatusText).Append("\r\n");
+
+                // ---- 步骤 2：专门的 32 位自测目标
+                if (!host32.Start(Process.GetCurrentProcess().Id, "--selftest-target", hostLogger))
+                {
+                    AppendLog(detail, "helper32", hostLog);
+                    Inconclusive("T10", "32 位归属链路",
+                        "失败步骤=启动 32 位宿主（释放 exe/DLL 或 CreateProcess 失败）："
+                        + (host32.Error ?? "未知"));
+                    return;
+                }
+
+                bool ready = host32.WaitReady(8000, hostLogger);
+                AppendLog(detail, "helper32", hostLog);
+                long hwnd = host32.WindowHandle;
+                int targetPid = host32.Pid;
+                detail.Append("    32 位宿主 pid=").Append(targetPid)
+                      .Append(" hwnd=0x").Append(hwnd.ToString("X"))
+                      .Append(" 自身钩子=").Append(host32.HookInstalled ? "已安装" : "未安装")
+                      .Append(" 就绪=").Append(ready ? "是" : "否").Append("\r\n");
+                if (hwnd == 0 || targetPid == 0)
+                {
+                    string tail = host32.IsRunning
+                        ? "32 位宿主还活着，但没有报出 HELPER32_READY（8000 毫秒内）：" + (host32.LastLine ?? "无输出")
+                        : "32 位宿主启动后立即退出：" + (host32.Error ?? host32.LastLine ?? "无输出");
+                    Inconclusive("T10", "32 位归属链路", "失败步骤=" + tail);
+                    return;
+                }
+
+                // ---- 步骤 3：确定性地往 32 位窗口投一条 WM_HOTKEY
+                var combo = KeyCombo.Parse("Ctrl+Alt+F13");
+                var received = new List<AttributionRecord>();
+                engine.RecordReceived += delegate (AttributionRecord r) { lock (received) received.Add(r); };
+
+                DateTime postAt = DateTime.Now;
+                bool posted = NativeMethods.PostMessageW(new IntPtr(hwnd), 0x0312 /*WM_HOTKEY*/,
+                                                         new IntPtr(1), new IntPtr(combo.ToHotkeyLParam()));
+                detail.Append("    PostMessage(WM_HOTKEY, lParam=0x").Append(combo.ToHotkeyLParam().ToString("X"))
+                      .Append(") → hwnd=0x").Append(hwnd.ToString("X")).Append(" = ").Append(posted).Append("\r\n");
+                if (!posted)
+                {
+                    Inconclusive("T10", "32 位归属链路",
+                        "失败步骤=PostMessage 返回 false（错误码 " + Marshal.GetLastWin32Error()
+                        + "），消息没送进 32 位窗口");
+                    return;
+                }
+
+                // ---- 步骤 4：3 秒内等 pid 正确的记录
+                AttributionRecord hit = null;
+                DateTime deadline = DateTime.Now.AddSeconds(3);
+                while (DateTime.Now < deadline)
+                {
+                    lock (received)
+                    {
+                        foreach (AttributionRecord r in received)
+                        {
+                            if (r.Pid == targetPid) { hit = r; break; }
+                        }
+                    }
+                    if (hit != null) break;
+                    Thread.Sleep(50);
+                }
+
+                if (hit == null)
+                {
+                    detail.Append("    32 位宿主模块检查：")
+                          .Append(DllInjectionStatus(targetPid, Helper32Locator.DllFileName)).Append("\r\n");
+                    if (!host32.IsRunning)
+                    {
+                        detail.Append("    32 位宿主已退出：").Append(host32.LastLine ?? "无输出").Append("\r\n");
+                    }
+                    Inconclusive("T10", "32 位归属链路",
+                        "失败步骤=归属记录没回来（PostMessage 已发出，3 秒内没有 pid=" + targetPid
+                        + " 的记录）。多半是 32 位钩子没能注入目标进程（低完整性/UIPI/无交互桌面）。细节：\r\n"
+                        + detail);
+                    return;
+                }
+
+                bool pidOk = hit.Pid == targetPid;
+                bool bitnessOk = string.Equals(hit.Bitness, "x86", StringComparison.Ordinal);
+                bool comboOk = hit.Combo != null && hit.Combo.Normalize() == combo.Normalize();
+                if (pidOk && bitnessOk && comboOk)
+                {
+                    Add("T10", "32 位归属链路", true, string.Format(
+                        "32 位链路成功：宿主 pid={0}（hwnd=0x{1:X}，自身钩子={2}，引擎自带 32 位宿主={3}）；"
+                        + "PostMessage 后 {4} 毫秒收到归属记录：pid 正确、Bitness={5}、组合键 {6}、进程 {7}。"
+                        + "这条记录只可能来自 32 位钩子（x64 DLL 进不了 32 位进程）。",
+                        targetPid, hwnd, host32.HookInstalled ? "已安装" : "未安装",
+                        engine.Helper32.StatusText,
+                        (int)(hit.Time - postAt).TotalMilliseconds, hit.Bitness,
+                        hit.Combo.Display(), hit.ProcessName));
+                    return;
+                }
+
+                Inconclusive("T10", "32 位归属链路", string.Format(
+                    "失败步骤=收到 pid={0} 的记录但内容不对（pid 正确={1}，Bitness={2}，组合键={3}）。细节：\r\n{4}",
+                    hit.Pid, pidOk, hit.Bitness ?? "?", hit.Combo == null ? "null" : hit.Combo.Display(), detail));
+            }
+            catch (Exception ex)
+            {
+                Add("T10", "32 位归属链路", false, "异常：" + ex + "\r\n细节：\r\n" + detail);
+            }
+            finally
+            {
+                try { engine.Stop(); } catch (Exception) { }
+                try { engine.Dispose(); } catch (Exception) { }
+                try { host32.Stop(hostLogger); } catch (Exception) { }
+                AppendLog(detail, "helper32", hostLog);
+                lock (hostLog)
+                {
+                    foreach (string line in hostLog) Console.WriteLine("    [helper32] " + line);
+                }
+            }
+        }
+
+        private static void AppendLog(StringBuilder detail, string tag, List<string> lines)
+        {
+            lock (lines)
+            {
+                foreach (string line in lines)
+                {
+                    detail.Append("    [").Append(tag).Append("] ").Append(line).Append("\r\n");
+                }
+                lines.Clear();
             }
         }
 

@@ -16,14 +16,20 @@ namespace HotkeyHound.Core
         public string ProcessName;
         public string ProcessPath;
         public bool IsElevated;
+        /// <summary>
+        /// 目标进程的位数（"x64" / "x86" / "?"）。x64 钩子只能注入 x64 进程、x86 钩子只能注入
+        /// x86 进程，所以这个字段同时也说明了这条记录是哪一条注入链路抓到的。
+        /// </summary>
+        public string Bitness;
         public string Note;
 
         public string Display()
         {
-            return string.Format("{0}  {1}  PID {2}  {3}{4}",
+            return string.Format("{0}  {1}  PID {2}  {3}{4}{5}",
                 Time.ToString("HH:mm:ss"), Combo == null ? L10n.T("attr.unknownCombo") : Combo.Display(), Pid,
                 string.IsNullOrEmpty(ProcessName) ? L10n.T("attr.unknownProc") : ProcessName,
-                IsElevated ? L10n.T("attr.elevatedTag") : "");
+                IsElevated ? L10n.T("attr.elevatedTag") : "",
+                string.IsNullOrEmpty(Bitness) ? "" : "  " + Bitness);
         }
     }
 
@@ -32,6 +38,10 @@ namespace HotkeyHound.Core
     /// SetWindowsHookEx(WH_GETMESSAGE) 装全局钩子，并在独立线程上跑消息循环。
     /// DLL 在目标进程里读到 WM_HOTKEY 后 PostMessage 回我们的控制窗口，
     /// 这里解析出「哪个进程注册了这个热键」。
+    ///
+    /// 32 位进程需要另一条链路：Windows 只允许钩子注入与安装者同位数的进程，
+    /// 所以这里还会同时拉起一个 32 位宿主进程（HotkeyHound.Helper32.exe）装 32 位钩子。
+    /// 两条链路报进同一张表，只用 Bitness 区分；32 位那一侧失败只降级，不影响 64 位路径。
     /// </summary>
     public sealed class AttributionEngine : IDisposable
     {
@@ -43,10 +53,9 @@ namespace HotkeyHound.Core
         private const uint HKS_MAGIC = 0x484B5354;
         private const string MapName = "Local\\HotkeyHound.Ctl";
         /// <summary>
-        /// 原生侧 HksControl 是 pack(1) 的 { DWORD magic; HWND ctl; DWORD arm; }，
-        /// x64 上共 16 字节（magic 0..4、ctl 4..12、arm 12..16）。
-        /// 映射必须至少这么大，否则 DLL 的 MapViewOfFile(16) 会失败，整条上报链路静默断掉。
-        /// 这里留足 64 字节以免将来加字段又踩同一个坑。
+        /// 原生侧 HksControl 是 pack(1) 的 { DWORD magic; DWORD arm; DWORD ctlLo; DWORD ctlHi; }，
+        /// 固定 16 字节，x86 与 x64 完全一致（这正是改布局的原因：旧的 HWND 字段跨位数会错位）。
+        /// 映射留足 64 字节以免将来加字段又踩同一个坑。
         /// </summary>
         private const int ControlMapSize = 64;
 
@@ -56,6 +65,7 @@ namespace HotkeyHound.Core
 
         private readonly object _gate = new object();
         private readonly List<AttributionRecord> _records = new List<AttributionRecord>();
+        private readonly Helper32Runtime _helper32 = new Helper32Runtime();
 
         private Thread _thread;
         private volatile bool _stopRequested;
@@ -82,6 +92,9 @@ namespace HotkeyHound.Core
         public IntPtr HookHandle { get { return _hook; } }
         public string DllPath { get { return _dllPath; } }
         public string LastError { get; private set; }
+
+        /// <summary>32 位伴随宿主的状态（未启动时 IsRunning=false，Error 里有原因）。</summary>
+        public Helper32Runtime Helper32 { get { return _helper32; } }
 
         public AttributionRecord[] Records
         {
@@ -127,6 +140,9 @@ namespace HotkeyHound.Core
             _thread.SetApartmentState(ApartmentState.STA);
             _thread.Start();
 
+            // 32 位宿主与 x64 钩子并行启动：两条链路互不依赖，任何一边失败都只影响自己那一半。
+            _helper32.Start(Process.GetCurrentProcess().Id, null, Say);
+
             // 等钩子装好（最多 5 秒）
             DateTime deadline = DateTime.Now.AddSeconds(5);
             while (!_ready && DateTime.Now < deadline && _thread.IsAlive)
@@ -137,8 +153,13 @@ namespace HotkeyHound.Core
             {
                 if (LastError == null) LastError = "钩子线程未能就绪（超时）";
                 Say(LastError);
+                try { _helper32.Stop(Say); }
+                catch (Exception) { }
                 return false;
             }
+
+            // x64 路径已就绪；32 位宿主最多再等 4 秒，超时也只是缺少 32 位覆盖。
+            _helper32.WaitReady(4000, Say);
             return true;
         }
 
@@ -159,6 +180,10 @@ namespace HotkeyHound.Core
             }
             _thread = null;
             _ready = false;
+
+            // 32 位宿主是本程序自己拉起的子进程：必须在这里结束它，绝不留僵尸。
+            try { _helper32.Stop(Say); }
+            catch (Exception) { }
         }
 
         public void Dispose()
@@ -174,7 +199,7 @@ namespace HotkeyHound.Core
             {
                 if (!CreateControlWindow()) return;
 
-                // 共享内存：{magic, ctl, arm}
+                // 共享内存：{magic, arm, ctlLo, ctlHi}
                 _mapHandle = NativeMethods.CreateFileMappingW(new IntPtr(-1), IntPtr.Zero,
                     NativeMethods.PAGE_READWRITE, 0, (uint)ControlMapSize, MapName);
                 if (_mapHandle == IntPtr.Zero)
@@ -226,11 +251,14 @@ namespace HotkeyHound.Core
                 }
                 Say("SetWindowsHookEx 成功：hook=0x" + _hook.ToInt64().ToString("X") + "，控制窗口=0x" + _hwnd.ToInt64().ToString("X"));
 
-                // 写入共享内存，通知 DLL 可以上报
+                // 写入共享内存，通知 DLL 可以上报。布局必须与位数无关：全是 4 字节字段。
+                long hwndValue = _hwnd.ToInt64();
                 Marshal.WriteInt32(_mapView, 0, unchecked((int)HKS_MAGIC));
-                Marshal.WriteIntPtr(_mapView, 4, _hwnd);
-                Marshal.WriteInt32(_mapView, 4 + IntPtr.Size, 1);
-                Say("共享内存 " + MapName + " 已就绪（magic=0x484B5354, arm=1）");
+                Marshal.WriteInt32(_mapView, 4, 1);
+                Marshal.WriteInt32(_mapView, 8, unchecked((int)(hwndValue & 0xFFFFFFFFL)));
+                Marshal.WriteInt32(_mapView, 12, unchecked((int)((hwndValue >> 32) & 0xFFFFFFFFL)));
+                Say("共享内存 " + MapName + " 已就绪（magic=0x484B5354, arm=1, ctl=0x"
+                    + _hwnd.ToInt64().ToString("X") + "）");
 
                 _ready = true;
 
@@ -327,6 +355,7 @@ namespace HotkeyHound.Core
             rec.ProcessPath = path;
             rec.IsElevated = elevated;
             rec.ProcessName = DescribeProcess(pid, path);
+            rec.Bitness = BitnessOf(pid);
 
             if (rec.Combo == null) rec.Note = L10n.T("attr.note.badParam");
             else if (rec.ProcessName == null) rec.Note = L10n.T("attr.note.noProc");
@@ -340,6 +369,25 @@ namespace HotkeyHound.Core
                 try { h(rec); }
                 catch (Exception) { }
             }
+        }
+
+        /// <summary>
+        /// 从目标进程本身判断位数：x64 钩子只可能注入 x64 进程，x86 钩子只可能注入 x86 进程，
+        /// 因此这个字段就是「哪条链路抓到的」的可靠证据。拿不到进程（已退出/权限不足）时写 "?"。
+        /// </summary>
+        public static string BitnessOf(int pid)
+        {
+            IntPtr h = IntPtr.Zero;
+            try
+            {
+                h = NativeMethods.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+                if (h == IntPtr.Zero) return "?";
+                bool wow64;
+                if (!NativeMethods.IsWow64Process(h, out wow64)) return "?";
+                return wow64 ? "x86" : "x64";
+            }
+            catch (Exception) { return "?"; }
+            finally { if (h != IntPtr.Zero) NativeMethods.CloseHandle(h); }
         }
 
         public static string DescribeProcess(int pid, string path)
@@ -425,7 +473,7 @@ namespace HotkeyHound.Core
             {
                 if (_mapView != IntPtr.Zero)
                 {
-                    Marshal.WriteInt32(_mapView, 4 + IntPtr.Size, 0);   // arm=0，DLL 立刻停止上报
+                    Marshal.WriteInt32(_mapView, 4, 0);   // arm=0，DLL 立刻停止上报
                     NativeMethods.UnmapViewOfFile(_mapView);
                     _mapView = IntPtr.Zero;
                 }
@@ -477,6 +525,9 @@ namespace HotkeyHound.Core
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         public static extern IntPtr GetModuleHandleW(string name);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool IsWow64Process(IntPtr process, out bool wow64);
 
         [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowsHookExW")]
         public static extern IntPtr SetWindowsHookExPtr(int idHook, IntPtr proc, IntPtr hMod, uint threadId);

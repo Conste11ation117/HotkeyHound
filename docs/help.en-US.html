@@ -49,6 +49,11 @@ setting changes, no registry writes, every registration is undone instantly.</p>
 <code>WM_HOTKEY</code>. When you press a global hotkey, the process that owns it receives the message and the hook
 reports back "owner PID + combination", so you learn whose hotkey it is. Use: "Start listening" on the Key
 attribution page, or <code>HotkeyHound.exe --listen --seconds 30</code>.</p>
+<p><b>32-bit processes</b>: Windows only lets a hook inject into processes of the same bitness as the installer.
+This program is 64-bit, so starting the listener also launches a tiny 32-bit companion
+(<code>HotkeyHound.Helper32.exe</code>) that installs the 32-bit hook. Records from both paths land in the same
+table, and every row labels the target's bitness (x64 / x86). A failed companion only costs 32-bit coverage &mdash;
+the reason goes to the log and the 64-bit path keeps working.</p>
 <div class="note"><b>Risk:</b> this installs a global hook and injects the native DLL into every process in the
 session. It is installed <b>only when you explicitly click Start listening</b>, and unloaded the moment you click
 Stop; loading the UI installs no hook. Run as administrator where possible, otherwise elevated processes (e.g.
@@ -182,7 +187,10 @@ The tool never judges, stops or unloads a driver.</p>
 
 <h2>9. Known limitations</h2>
 <ul>
-  <li><b>32-bit processes are invisible</b>: this program is 64-bit and the hook DLL is x64.</li>
+  <li><b>32-bit coverage depends on a separate 32-bit host</b>: Windows does not let a 64-bit hook inject into
+      a 32-bit process, so 32-bit coverage comes from a companion started automatically when listening begins.
+      If security software blocks it, or it cannot be extracted/started, that coverage is missing (the reason
+      is in the log). Every attribution row labels the target's bitness (x64 / x86).</li>
   <li><b>Hook-based hotkeys do not go through WM_HOTKEY</b>: they neither appear in engine A nor trigger engine B.</li>
   <li><b>Only the current session is covered</b>: hotkeys in other login sessions are invisible.</li>
   <li><b>Some config encodings are unverified</b>: MSI Afterburner and Everything need a manual check.</li>
@@ -205,8 +213,10 @@ The tool never judges, stops or unloads a driver.</p>
 <h2>11. Uninstall / cleanup</h2>
 <ul>
   <li>Portable single file: just delete <code>HotkeyHound.exe</code> &mdash; no installer, no registry writes.</li>
-  <li>The program extracts engine B's native DLL (<code>HotkeyHound.Hook.dll</code>) and <code>settings.ini</code>
-      under <code>%LOCALAPPDATA%\HotkeyHound\</code> (or next to the exe); deleting that directory is enough.</li>
+  <li>The program extracts engine B's native DLL (<code>HotkeyHound.Hook.dll</code>), the two 32-bit artifacts
+      (<code>hooks\x86\HotkeyHound.Hook32.dll</code> and <code>HotkeyHound.Helper32.exe</code>) and
+      <code>settings.ini</code> under <code>%LOCALAPPDATA%\HotkeyHound\</code> (or next to the exe); deleting
+      that directory is enough.</li>
   <li>Engine B's DLL is injected into processes in the current session; those injections disappear when the
       processes restart, and <b>rebooting clears them completely</b>. On Stop, this program also calls
       <code>UnhookWindowsHookEx</code> to unload the hook.</li>
