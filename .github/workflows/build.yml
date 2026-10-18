@@ -54,7 +54,15 @@ jobs:
           $zh = Get-Content out-zh.html -Raw -Encoding UTF8
           $en = Get-Content out-en.html -Raw -Encoding UTF8
           if ($zh -notmatch '真相表') { throw "zh report is not Chinese" }
-          if ($en -match '真相表') { throw "en report still contains Chinese section titles" }
+          # 英文报告里出现任何 CJK 字符都算回归。1.3.1 之前适配器与引擎的日志会漏中文进
+          # 报告的 #method 区块，而只匹配「真相表」这一个词是挡不住的——直接数全篇，
+          # 并把命中的上下文打出来，否则 CI 只会说"有中文"却不告诉你在哪。
+          $cjk = [regex]::Matches($en, '[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]').Count
+          if ($cjk -ne 0) {
+            $hits = [regex]::Matches($en, '.{0,50}[\u4e00-\u9fff].{0,50}') |
+              Select-Object -First 3 | ForEach-Object { ($_.Value -replace '\s+', ' ').Trim() }
+            throw "en report still contains $cjk CJK char(s), e.g.: $($hits -join ' || ')"
+          }
           Write-Host "smoke test OK"
 
       - name: Package

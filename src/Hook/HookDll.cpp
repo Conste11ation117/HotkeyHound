@@ -1,4 +1,4 @@
-﻿// HotkeyHound 原生 hook DLL
+// HotkeyHound 原生 hook DLL
 //
 // 职责：作为一个 WH_GETMESSAGE 全局钩子被注入到每个 GUI 进程里，监听该进程
 // 消息队列中的 WM_HOTKEY。WH_GETMESSAGE 的 hook 过程在「目标进程」的上下文里
@@ -8,8 +8,9 @@
 //
 // 与控制器的握手走共享内存 Local\HotkeyHound.Ctl：
 //   { DWORD magic; DWORD arm; DWORD ctlLo; DWORD ctlHi; }
-// 控制器先创建并写入 ctl 窗口句柄，DLL 每次收到 WM_HOTKEY 都重新读取一次，
-// 这样控制器重开也能跟上（不用重装钩子）。
+// 控制器（x64 主进程）是唯一的写方，DLL 侧只读——注入到别人进程里的代码如果能写这块
+// 内存，就可能在控制器刚 arm=1 的瞬间把它清零，导致全局静默丢报，而且现场查不出来。
+// DLL 每次收到 WM_HOTKEY 都重新读一遍，所以控制器重开也能跟上（不用重装钩子）。
 //
 // 这份源码同时编 x64 与 x86 两个版本（HotkeyHound.Hook.dll / HotkeyHound.Hook32.dll）：
 // 钩子只能注入与安装者同位数的进程，32 位进程需要另一份 32 位 DLL + 32 位宿主。
@@ -18,6 +19,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <cstddef>   // offsetof：下面的字段偏移断言要用
 
 #define HKS_MAGIC      0x484B5354u   // 'HKST'
 #define HKS_MAP_NAME   L"Local\\HotkeyHound.Ctl"
@@ -59,16 +61,33 @@ static void HksDbg(const char* fmt, ...)
 #pragma pack(push, 1)
 struct HksControl
 {
-    DWORD magic;
-    DWORD arm;
+    // volatile：控制块由控制器进程写、由每个被注入进程读，编译器不许把这些读缓存进寄存器，
+    // 否则「控制器已经 arm=0 了」这件事在热路径里永远看不到。
+    volatile DWORD magic;
+    volatile DWORD arm;
     // 句柄拆成两个 32 位字段：x86 与 x64 的 HWND 宽度不同，布局必须与位数无关。
-    DWORD ctlLo;
-    DWORD ctlHi;
+    volatile DWORD ctlLo;
+    volatile DWORD ctlHi;
 };
 #pragma pack(pop)
 
+// 段大小必须与控制器 AttributionEngine.ControlMapSize 一致。命名段由谁先创建就定死了，
+// 后来者无法把它改大：DLL 若只建 16 字节，控制器随后 MapViewOfFile(64) 就会失败，
+// 整条归属链路直接哑掉——而且哑得毫无声响。
+#define HKS_MAP_SIZE     64u
+
+// 初始化失败允许重试的次数。既不能一次失败就永久聋掉，也不能每条 WM_HOTKEY 都去
+// 试一次文件映射（钩子过程跑在别人的消息循环里）。
+#define HKS_MAX_INIT_TRY 8
+
 // 两种位数必须得到同一块 16 字节布局；改字段就同时改 AttributionEngine 的偏移。
 static_assert(sizeof(HksControl) == 16, "HksControl must stay 16 bytes in both x86 and x64");
+// 只断言总长挡不住回退：ctlLo/ctlHi 互换、arm 挪位之后总长仍然是 16，
+// 而 C# 侧是按 0/4/8/12 硬写的偏移，错位了谁也不会报错，只会静默丢归属。
+static_assert(offsetof(HksControl, magic) == 0,  "magic must stay at offset 0");
+static_assert(offsetof(HksControl, arm)   == 4,  "arm must stay at offset 4");
+static_assert(offsetof(HksControl, ctlLo) == 8,  "ctlLo must stay at offset 8");
+static_assert(offsetof(HksControl, ctlHi) == 12, "ctlHi must stay at offset 12");
 
 static HWND ControlWindow(const HksControl* ctl)
 {
@@ -76,12 +95,10 @@ static HWND ControlWindow(const HksControl* ctl)
     return (HWND)(ULONG_PTR)v;
 }
 
-// 只做一次性初始化：INIT_ONCE 保证「成功或失败都只尝试一次」。
-// 钩子过程跑在别人的消息循环里，绝不能反复做文件映射/加锁这类重活，
-// 也不能因为控制器暂时不在就每次热键都重试一遍。
 static HANDLE      g_hMap = NULL;
 static HksControl* g_pCtl = NULL;
 static INIT_ONCE   g_once = INIT_ONCE_STATIC_INIT;
+static LONG        g_tries = 0;
 
 static BOOL CALLBACK InitControlOnce(PINIT_ONCE once, PVOID param, PVOID* ctx)
 {
@@ -89,46 +106,51 @@ static BOOL CALLBACK InitControlOnce(PINIT_ONCE once, PVOID param, PVOID* ctx)
     UNREFERENCED_PARAMETER(param);
     UNREFERENCED_PARAMETER(ctx);
 
+    if (InterlockedIncrement(&g_tries) > HKS_MAX_INIT_TRY) return TRUE;   // 放弃，别再试
+
     DWORD created = 0;
-    HANDLE h = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, HKS_MAP_NAME);
+    // 只要读权限。这块内存归控制器所有：注入到别人进程里的 DLL 一旦能写，就可能在控制器
+    // 那四条非原子写（magic/arm/ctlLo/ctlHi）中间插进来把 arm 清零，全局静默丢报，
+    // 而且这种故障在现场根本查不出来。所以这里连写权限都不要。
+    HANDLE h = OpenFileMappingW(FILE_MAP_READ, FALSE, HKS_MAP_NAME);
     if (h == NULL)
     {
         DWORD openErr = GetLastError();
+        // 参数序是 (…, dwMaximumSizeHigh, dwMaximumSizeLow, name)。这里曾经写反成
+        // (sizeof, 0)，等于申请 16 * 4GiB = 64GiB 的 pagefile 段：绝大多数机器直接失败，
+        // 回退路径形同不存在；真在大 pagefile 的机器上成功了，每个被注入进程都会钉住
+        // 64GiB 提交，足以拖垮整机。
         h = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
-                               sizeof(HksControl), 0, HKS_MAP_NAME);
+                               0, HKS_MAP_SIZE, HKS_MAP_NAME);
         if (h != NULL) created = 1;
         HksDbg("OpenFileMapping 失败(err=%lu)，自建映射=%s hMap=%p",
                openErr, created ? "成功" : "失败", h);
     }
-    if (h == NULL) return TRUE;
+    // 失败必须 return FALSE：返回 TRUE 会让 INIT_ONCE 认为「已完成」，g_pCtl 永远是 NULL，
+    // 这个进程从此对热键彻底失聪——即使控制器随后正常起来了也救不回来。
+    if (h == NULL) return FALSE;
 
-    void* p = MapViewOfFile(h, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, sizeof(HksControl));
+    // 请求 0 = 映射整段：控制器将来把段建得更大也不会因此映射失败。
+    void* p = MapViewOfFile(h, FILE_MAP_READ, 0, 0, 0);
     if (p == NULL)
     {
         HksDbg("MapViewOfFile 失败 err=%lu", GetLastError());
         CloseHandle(h);
-        return TRUE;
+        return FALSE;
     }
 
-    HksControl* ctl = (HksControl*)p;
-    if (ctl->magic != HKS_MAGIC)
-    {
-        // 还没人写过（或者对端已退出被复位）：先清干净，等控制器来初始化
-        ctl->magic = HKS_MAGIC;
-        ctl->arm   = 0;
-        ctl->ctlLo = 0;
-        ctl->ctlHi = 0;
-    }
     g_hMap = h;
-    g_pCtl = ctl;
+    g_pCtl = (HksControl*)p;
     HksDbg("映射就绪 magic=0x%08lX ctl=%p arm=%lu（本人创建=%lu）",
-           (unsigned long)ctl->magic, (void*)ControlWindow(ctl), (unsigned long)ctl->arm, created);
+           (unsigned long)g_pCtl->magic, (void*)ControlWindow(g_pCtl),
+           (unsigned long)g_pCtl->arm, created);
     return TRUE;
 }
 
 static HksControl* GetControl()
 {
-    if (g_pCtl != NULL) return g_pCtl;
+    HksControl* p = g_pCtl;
+    if (p != NULL) return p;
     InitOnceExecuteOnce(&g_once, InitControlOnce, NULL, NULL);
     return g_pCtl;
 }
@@ -156,18 +178,26 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK HotkeyHoundHookProc(int nCode,
             HksControl* ctl = GetControl();
             if (ctl != NULL)
             {
-                HWND ctlWindow = ControlWindow(ctl);
-                HksDbg(" 控制块 magic=0x%08lX ctl=%p arm=%lu",
-                       (unsigned long)ctl->magic, (void*)ctlWindow, (unsigned long)ctl->arm);
-                if (ctl->magic == HKS_MAGIC && ctlWindow != NULL && ctl->arm != 0)
+                // 读序必须是 arm → magic → 句柄：控制器的写序是 ctlLo/ctlHi → magic →
+                // 内存屏障 → arm=1。所以只要 arm 已经是 1，句柄与 magic 必定都落地了，
+                // 不会读到「新 lo + 旧 hi」这种拼不出来的窗口句柄；反过来先读句柄就会撕裂。
+                DWORD arm = ctl->arm;
+                DWORD magic = ctl->magic;
+                if (arm != 0 && magic == HKS_MAGIC)
                 {
-                    // wParam = 本进程 pid（归属答案），lParam = 热键的修饰键+VK
-                    BOOL ok = PostMessageW(ctlWindow, HKS_WM_REPORT,
-                                           (WPARAM)GetCurrentProcessId(),
-                                           (LPARAM)msg->lParam);
-                    HksDbg(" 上报 PostMessage(%p, 0x%X, pid=%lu) = %s（err=%lu）",
-                           (void*)ctlWindow, (unsigned)HKS_WM_REPORT, (unsigned long)GetCurrentProcessId(),
-                           ok ? "成功" : "失败", ok ? 0 : GetLastError());
+                    HWND ctlWindow = ControlWindow(ctl);
+                    HksDbg(" 控制块 magic=0x%08lX ctl=%p arm=%lu",
+                           (unsigned long)magic, (void*)ctlWindow, (unsigned long)arm);
+                    if (ctlWindow != NULL)
+                    {
+                        // wParam = 本进程 pid（归属答案），lParam = 热键的修饰键+VK
+                        BOOL ok = PostMessageW(ctlWindow, HKS_WM_REPORT,
+                                               (WPARAM)GetCurrentProcessId(),
+                                               (LPARAM)msg->lParam);
+                        HksDbg(" 上报 PostMessage(%p, 0x%X, pid=%lu) = %s（err=%lu）",
+                               (void*)ctlWindow, (unsigned)HKS_WM_REPORT, (unsigned long)GetCurrentProcessId(),
+                               ok ? "成功" : "失败", ok ? 0 : GetLastError());
+                    }
                 }
             }
             else
