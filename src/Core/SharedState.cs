@@ -10,7 +10,7 @@ namespace HotkeyHound.Core
     public static class AppInfo
     {
         public const string Title = "HotkeyHound";
-        public const string Version = "1.0.0";
+        public const string Version = "1.1.0";
 
         /// <summary>版本说明（随当前语言变化）。</summary>
         public static string VersionNote { get { return L10n.T("app.versionNote"); } }
@@ -107,6 +107,9 @@ namespace HotkeyHound.Core
 
         public ConfigCollection Config = new ConfigCollection();
         public TruthTable Truth = new TruthTable();
+        /// <summary>钩子型热键知识库与本次扫描关联出的嫌疑清单（引擎 A/D 之后构建，只读）。</summary>
+        public HookCatalog Catalog;
+        public List<HookSuspect> HookSuspects = new List<HookSuspect>();
         public string[] Log = new string[0];
 
         public int DeclaredCount
@@ -157,6 +160,20 @@ namespace HotkeyHound.Core
                 log.Write(L10n.F("scan.truth.kind", TruthTable.KindName(kind), snapshot.Truth.CountOf(kind)));
             }
             log.Write(L10n.F("scan.truth.done", snapshot.Truth.Rows.Count));
+
+            log.Write(L10n.T("scan.catalog.start"));
+            try
+            {
+                snapshot.Catalog = HookCatalog.Load();
+                foreach (string line in snapshot.Catalog.Log) log.Write(line);
+                snapshot.HookSuspects = snapshot.Catalog.BuildSuspects(snapshot.Occupancy);
+                log.Write(L10n.F("scan.catalog.done", snapshot.Catalog.Entries.Count, snapshot.HookSuspects.Count));
+            }
+            catch (Exception ex)
+            {
+                // 知识库坏掉不能拖垮整轮扫描：报告里会写明「本次没有钩子嫌疑数据」。
+                log.Write(L10n.F("scan.catalog.failed", ex.Message));
+            }
 
             snapshot.GeneratedAt = DateTime.Now;
             snapshot.Log = log.Snapshot();
@@ -282,6 +299,7 @@ namespace HotkeyHound.Core
         private static readonly List<AttributionRecord> _attribution = new List<AttributionRecord>();
         private static readonly List<HookCheckRecord> _hookRecords = new List<HookCheckRecord>();
         private static readonly List<ComparisonSnapshot> _comparisons = new List<ComparisonSnapshot>();
+        private static AutoProbeResult _autoProbe;
 
         public static void AddAttribution(AttributionRecord record)
         {
@@ -314,6 +332,21 @@ namespace HotkeyHound.Core
         public static ComparisonSnapshot[] Comparisons()
         {
             lock (_gate) return _comparisons.ToArray();
+        }
+
+        public static void SetAutoProbe(AutoProbeResult result)
+        {
+            lock (_gate) _autoProbe = result;
+        }
+
+        public static AutoProbeResult AutoProbe()
+        {
+            lock (_gate) return _autoProbe;
+        }
+
+        public static void ClearAutoProbe()
+        {
+            lock (_gate) _autoProbe = null;
         }
 
         public static void ClearAttribution()

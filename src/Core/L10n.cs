@@ -157,6 +157,7 @@ namespace HotkeyHound.Core
             BuildUi();
             BuildHelp();
             BuildTerms();
+            BuildProbeCatalog();
         }
 
         private static void A(string key, string zh, string en)
@@ -957,6 +958,294 @@ namespace HotkeyHound.Core
             A("help.close", "关闭", "Close");
             A("help.exportFailed", "无法导出帮助文件：{0}", "Cannot export the help file: {0}");
             A("help.missing", "找不到内嵌的帮助文档资源。", "Embedded help document resource not found.");
+        }
+
+        // ------------------------------------------------------------------ 自动归属 / 钩子知识库
+
+        private static void BuildProbeCatalog()
+        {
+            A("cli.help.attributeAll",
+              "  HotkeyHound.exe --attribute-all [--report <路径>] [--max N] [--yes] [--dry-run]",
+              "  HotkeyHound.exe --attribute-all [--report <path>] [--max N] [--yes] [--dry-run]");
+            A("cli.help.attributeAllDesc",
+              "                                                自动归属已占用组合；默认 dry-run，必须 --yes 才会真的按键",
+              "                                                Auto-attribute occupied combinations; dry-run by default, --yes actually presses");
+            A("cli.attr.title", "{0} {1} —— 自动归属（引擎 A × B）",
+              "{0} {1} — automatic attribution (engines A x B)");
+            A("cli.attr.failed", "自动归属执行失败：{0}", "Auto-attribution failed: {0}");
+            A("cli.attr.meta", "已占用组合：{0} 个　上限：{1} 个　模式：{2}",
+              "Occupied combinations: {0}  Max: {1}  Mode: {2}");
+            A("cli.attr.mode.dryRun", "dry-run（不会按下任何键）", "dry-run (no key will be pressed)");
+            A("cli.attr.mode.real", "真实按键（--yes）", "real key presses (--yes)");
+            A("cli.attr.plan", "计划：将按 {0} 个组合，跳过 {1} 个。",
+              "Plan: {0} combination(s) will be pressed, {1} skipped.");
+            A("cli.attr.willPress", "  将按   {0}", "  press  {0}");
+            A("cli.attr.skip", "  跳过   {0} —— {1}", "  skip   {0} — {1}");
+            A("cli.attr.dryRunDone", "dry-run 结束：{0} 个组合待按，{1} 个被跳过；一次都没有真的按下。加 --yes 才会真的按。",
+              "Dry-run finished: {0} combination(s) queued, {1} skipped; nothing was actually pressed. Add --yes to press for real.");
+            A("cli.attr.needYes", "没有 --yes，本次只做 dry-run。", "Without --yes this run is dry-run only.");
+            A("cli.attr.starting", "正在安装归属钩子并开始按键；随时按 Esc 立即中止…",
+              "Installing the attribution hook and starting to press keys; press Esc at any time to abort…");
+            A("cli.attr.engineFailed", "归属钩子启动失败，未按下任何键：{0}",
+              "The attribution hook failed to start; no key was pressed: {0}");
+            A("cli.attr.done", "自动归属结束：拿到归属 {0} 个，无响应 {1} 个，跳过 {2} 个。",
+              "Auto-attribution finished: {0} attributed, {1} no response, {2} skipped.");
+            A("cli.attr.aborted", "已按用户要求中止（Esc）。已完成的结果仍记录在报告里。",
+              "Aborted on request (Esc). Completed results are still recorded in the report.");
+
+            A("auto.skip.badCombo", "无效的组合键", "Invalid key combination");
+            A("auto.skip.win", "含 Win 键，可能触发开始菜单/任务视图等系统界面（硬编码禁止）",
+              "Contains Win and may trigger the Start menu, Task View or other system UI (hard-coded exclusion)");
+            A("auto.skip.altF4", "会关闭当前程序（硬编码禁止）", "Closes the current program (hard-coded exclusion)");
+            A("auto.skip.altTab", "会切换窗口（硬编码禁止）", "Switches windows (hard-coded exclusion)");
+            A("auto.skip.altEsc", "会切换窗口（硬编码禁止）", "Switches windows (hard-coded exclusion)");
+            A("auto.skip.altSpace", "会打开窗口系统菜单（硬编码禁止）", "Opens the window system menu (hard-coded exclusion)");
+            A("auto.skip.ctrlEsc", "会打开开始菜单（硬编码禁止）", "Opens the Start menu (hard-coded exclusion)");
+            A("auto.skip.ctrlAltDel", "安全注意序列，绝不能模拟（硬编码禁止）",
+              "Secure attention sequence, never simulated (hard-coded exclusion)");
+            A("auto.skip.ctrlShiftEsc", "会打开任务管理器（硬编码禁止）", "Opens Task Manager (hard-coded exclusion)");
+            A("auto.skip.ctrlAltTab", "会打开窗口切换器（硬编码禁止）", "Opens the window switcher (hard-coded exclusion)");
+            A("auto.skip.altShiftTab", "会打开反向窗口切换器（硬编码禁止）", "Opens the reverse window switcher (hard-coded exclusion)");
+            A("auto.skip.displayRotate", "是显卡驱动的屏幕旋转热键，按下会把显示转 90°（硬编码禁止）",
+              "Is the GPU driver's display-rotation hotkey and would rotate the screen (hard-coded exclusion)");
+            A("auto.skip.moreReason", "另有 {0} 个同类组合被跳过（{1}）",
+              "another {0} combination(s) of the same kind skipped ({1})");
+            A("auto.skip.overMax", "超出 --max 上限 {0}，其余 {1} 个已占用组合本次不处理",
+              "Beyond the --max limit of {0}; the remaining {1} occupied combination(s) are not processed this run");
+            A("auto.skip.dryRun", "dry-run：计划按下，但本次一次都没有真的按",
+              "dry-run: planned, but nothing was actually pressed this run");
+            A("auto.skip.aborted", "已中止（Esc 或用户取消），没有按下",
+              "Aborted (Esc or cancelled by the user); not pressed");
+            A("auto.skip.engineNotRunning", "归属钩子没有运行，无法归属",
+              "The attribution hook was not running, so nothing can be attributed");
+            A("auto.skip.inputFailed", "SendInput 失败：{0}", "SendInput failed: {0}");
+            A("auto.input.counts", "按下送入 {0}/{1}，抬起送入 {2}/{3}，错误码 {4}",
+              "sent {0}/{1} key-down events and {2}/{3} key-up events, error {4}");
+            A("auto.log.willPress", "将按 {0}", "will press {0}");
+            A("auto.log.skipSummary", "跳过：{0}", "skip: {0}");
+            A("auto.log.skip", "跳过 {0}：{1}", "skip {0}: {1}");
+            A("auto.log.press", "正在按下 {0}", "pressing {0}");
+            A("auto.log.attributed", "{0} → 归属 {1}（PID {2}）", "{0} -> attributed to {1} (PID {2})");
+            A("auto.log.noResponse", "{0} → 按下去了，但 1.2 秒内没有任何归属报告",
+              "{0} -> pressed, but no attribution report arrived within 1.2 s");
+            A("auto.note.attributed", "PID {0}；路径：{1}", "PID {0}; path: {1}");
+            A("auto.note.noResponse",
+              "按下去了但持有者没有收到（1.2 秒内无归属报告）——高度怀疑该按键被钩子吞掉",
+              "Pressed but the owner never received it (no attribution report within 1.2 s) — the key is very likely swallowed by a hook");
+            A("auto.outcome.attributed", "已归属", "Attributed");
+            A("auto.outcome.noResponse", "无响应", "No response");
+            A("auto.outcome.skipped", "跳过", "Skipped");
+            A("auto.flag.dryRun", "dry-run：没有按下任何键", "dry-run: no key was pressed");
+            A("auto.flag.real", "真实按键", "real key presses");
+            A("auto.flag.aborted", "已中止（Esc）", "aborted (Esc)");
+            A("auto.counts", "已归属 {0}　无响应 {1}　跳过 {2}", "attributed {0}  no response {1}  skipped {2}");
+
+            A("cat.embeddedMissing", "找不到内嵌的 hook-catalog.json 资源（构建时未内嵌？）。",
+              "The embedded hook-catalog.json resource was not found (missing at build time?).");
+            A("cat.userFailed", "用户 catalog.json 解析失败，已忽略：{0}",
+              "The user catalog.json could not be parsed and was ignored: {0}");
+            A("cat.loaded", "钩子知识库：{0} 条（内嵌 {1}，用户覆盖 {2}）",
+              "Hook catalog: {0} entries ({1} embedded, {2} user overrides)");
+            A("cat.enrichFailed", "条目 {0} 复用引擎 D 解析失败（已忽略）：{1}",
+              "Entry {0} failed to reuse engine D's parser (ignored): {1}");
+            A("cat.source.config", "本机配置", "Local config");
+            A("cat.source.default", "官方默认", "Official default");
+            A("cat.source.docs", "文档记载", "Documentation");
+            A("cat.source.none", "（无配置来源）", "(no config source)");
+            A("cat.note.configDerived", "键位来自本机配置。", "The key comes from the local configuration.");
+            A("cat.note.defaultSource", "键位来自官方默认，本机未读到配置。",
+              "The key is an official default; the local configuration could not be read.");
+            A("cat.note.docsSource", "键位来自文档记载，本机未验证。",
+              "The key comes from documentation and was not verified on this machine.");
+            A("cat.note.processRunning", "进程在运行（{0}）。", "The process is running ({0}).");
+            A("cat.note.processNotRunning", "软件当前没有运行，键位暂时不会生效。",
+              "The software is not running, so the key is not active right now.");
+            A("cat.note.configRead", "配置可读：{0}", "Config readable: {0}");
+            A("cat.note.configUnreadable", "配置存在但读不出来（二进制/加密/被占用）：{0}",
+              "Config exists but cannot be read (binary, encrypted or locked): {0}");
+            A("cat.note.configMissing", "没有找到配置：{0}", "Config not found: {0}");
+            A("cat.note.scanOccupied", "引擎 A 实测：该组合已占用。", "Engine A measured this combination as occupied.");
+            A("cat.note.scanFree", "引擎 A 实测：该组合空闲——按下去可能被钩子先处理。",
+              "Engine A measured this combination as free — a hook may handle it first.");
+            A("cat.note.keyUnknown", "具体键位无法确定，只能提供进程与配置证据。",
+              "The exact key cannot be determined; only process and config evidence is available.");
+            A("cat.config.read", "可读", "Readable");
+            A("cat.config.unreadable", "不可读", "Unreadable");
+            A("cat.config.missing", "不存在", "Missing");
+            A("cat.config.none", "无配置路径", "No config path");
+
+            A("ev.confirmed", "已确认", "Confirmed");
+            A("ev.highlySuspected", "高度怀疑", "Highly suspected");
+            A("ev.knownDefault", "已知默认", "Known default");
+            A("ev.reference", "仅供参考", "Reference only");
+            A("ev.explain.confirmed",
+              "配置里明确写了这个组合，且软件正在运行。",
+              "The config explicitly declares this combination and the software is running.");
+            A("ev.explain.highlySuspected",
+              "只有一侧证据：配置里写了但软件没运行，或配置读不出来但进程在跑且已知它有钩子热键。",
+              "Only one side of the evidence: the config declares it but the software is not running, or the config is unreadable while the process runs and is known to use hook hotkeys.");
+            A("ev.explain.knownDefault",
+              "该软件的出厂默认快捷键，本机没能读到配置。",
+              "The software's factory-default shortcut; the local config could not be read.");
+            A("ev.explain.reference",
+              "该软件确实用钩子，但具体键位无法确定。",
+              "The software does use hooks, but the exact keys cannot be determined.");
+
+            A("scan.catalog.start", "正在加载钩子型热键知识库并与扫描结果关联",
+              "Loading the hook-hotkey catalog and correlating it with the scan");
+            A("scan.catalog.done", "钩子知识库：{0} 条条目，产出 {1} 条钩子嫌疑",
+              "Hook catalog: {0} entries, {1} hook-suspect record(s)");
+            A("scan.catalog.failed", "钩子知识库加载失败（已忽略，扫描结果不受影响）：{0}",
+              "The hook catalog failed to load (ignored; the scan result is unaffected): {0}");
+
+            A("ui.tab.hooksuspects", "钩子嫌疑", "Hook suspects");
+            A("ui.hs.title", "钩子嫌疑：谁在用键盘钩子抢键（知识库 × 实测占用）",
+              "Hook suspects: who grabs keys with keyboard hooks (catalog x measured occupancy)");
+            A("ui.hs.hint",
+              "本页加载时不安装任何钩子。结论来自三件事：读它的配置、看它是否在跑、对照引擎 A 的实测占用。"
+              + "证据等级为「已确认/高度怀疑/已知默认/仅供参考」，绝不会把猜测写成事实。",
+              "No hook is installed when this page loads. The conclusion comes from three things: reading its config, "
+              + "checking whether it runs, and comparing against engine A's measurement. Evidence levels are "
+              + "Confirmed / Highly suspected / Known default / Reference only — guesses are never presented as facts.");
+            A("ui.hs.levels",
+              "已确认=配置写了且进程在跑；高度怀疑=只有一侧证据；已知默认=官方默认、本机没读到；仅供参考=确定用钩子但键位未知。",
+              "Confirmed = config declares it and the process runs; Highly suspected = only one side of the evidence; "
+              + "Known default = official default, not read locally; Reference only = definitely uses hooks but the keys are unknown.");
+            A("ui.hs.filter.all", "全部证据等级", "All evidence levels");
+            A("ui.hs.col.software", "软件", "Software");
+            A("ui.hs.col.module", "模块", "Module");
+            A("ui.hs.col.process", "进程是否在跑", "Process running");
+            A("ui.hs.col.config", "配置是否可读", "Config readable");
+            A("ui.hs.col.source", "来源路径", "Source path");
+            A("ui.hs.openConfig", "打开配置所在目录", "Open config folder");
+            A("ui.hs.openFailed", "无法打开：{0}\r\n{1}", "Cannot open: {0}\r\n{1}");
+            A("ui.hs.noScan", "尚未扫描。先到「扫描总览」点「开始扫描」，钩子嫌疑需要与实测占用对照。",
+              "Not scanned yet. Run Start scan on the overview page first; hook suspects are correlated with measured occupancy.");
+            A("ui.hs.empty", "本次没有钩子嫌疑记录（知识库里没有 hook/mixed 条目，或键位都不在探测网格内）。",
+              "No hook-suspect records this run (the catalog has no hook/mixed entries, or none of their keys are inside the probe grid).");
+            A("ui.hs.count", "显示 {0} 条", "Showing {0}");
+            A("ui.hs.pickRow", "请先选中一行。", "Select a row first.");
+            A("ui.hs.noSource", "这一条没有可打开的配置路径。\r\n\r\n{0}", "This row has no config path to open.\r\n\r\n{0}");
+            A("ui.hs.unknownCombo", "（键位未知）", "(key unknown)");
+            A("ui.hs.processYes", "是", "Yes");
+            A("ui.hs.processNo", "否", "No");
+
+            A("ui.at.autoButton", "自动归属已占用组合（会触发这些热键的功能）",
+              "Auto-attribute occupied combinations (this triggers these hotkeys)");
+            A("ui.at.autoButtonStop", "中止自动归属（Esc）", "Abort auto-attribution (Esc)");
+            A("ui.at.autoConfirmTitle", "自动归属 —— 会真的按下热键",
+              "Auto-attribution — hotkeys will really be pressed");
+            A("ui.at.autoConfirmBody",
+              "接下来程序会对「已占用但不知道主人」的组合逐个模拟按下。这会真的触发这些热键的功能：\r\n\r\n"
+              + "· 可能开始录屏/录音、打开或关闭面板、切换输入法；\r\n"
+              + "· 可能弹出窗口、改变系统状态，甚至启动程序；\r\n"
+              + "· 含 Win 的组合、Alt+F4、Alt+Tab 等危险键已被硬编码排除，不会按；\r\n"
+              + "· 每次按键间隔至少 400 毫秒，归属等待 1.2 秒，最多 30 个；\r\n"
+              + "· 随时按 Esc 立即中止。\r\n\r\n"
+              + "确定要继续吗？",
+              "The program will simulate pressing each \"occupied but unknown owner\" combination. This really triggers "
+              + "those hotkeys: it may start recording, open or close panels, switch the input method, pop up windows, "
+              + "change system state, or even launch programs. The dangerous combinations (anything with Win, Alt+F4, "
+              + "Alt+Tab, and similar) are hard-coded exclusions and will never be pressed. There is at least 400 ms "
+              + "between key presses, 1.2 s of attribution wait, at most 30 combinations, and Esc aborts immediately.\r\n\r\n"
+              + "Continue?");
+            A("ui.at.autoNeedScan", "还没有扫描结果。先在「扫描总览」点「开始扫描」，才知道哪些组合已占用。",
+              "No scan result yet. Run Start scan on the overview page so the tool knows which combinations are occupied.");
+            A("ui.at.autoStarting", "正在安装归属钩子（只在本次自动归属期间）…",
+              "Installing the attribution hook (for this auto-attribution run only)…");
+            A("ui.at.autoAborting", "正在中止…", "Aborting…");
+            A("ui.at.autoProgress", "自动归属：{0} / {1}　{2}",
+              "Auto-attribution: {0} / {1}  {2}");
+            A("ui.at.autoDone", "自动归属结束：已归属 {0}，无响应 {1}，跳过 {2}。",
+              "Auto-attribution finished: {0} attributed, {1} no response, {2} skipped.");
+            A("ui.at.autoAborted", "已中止自动归属（Esc 或按钮）。已完成的结果已记录。",
+              "Auto-attribution aborted (Esc or the button). Completed results were recorded.");
+            A("ui.at.autoFailed", "自动归属失败：{0}", "Auto-attribution failed: {0}");
+            A("ui.at.autoListTitle", "自动归属结果（无响应 = 高度怀疑被钩子吞掉）",
+              "Auto-attribution results (no response = very likely swallowed by a hook)");
+            A("ui.at.autoCol.outcome", "结果", "Result");
+            A("ui.at.autoCol.owner", "归属进程", "Owner process");
+            A("ui.at.autoCol.note", "说明", "Explanation");
+            A("ui.at.autoNoOwner", "（无归属）", "(no owner)");
+
+            A("rep.card.hookSuspects", "钩子嫌疑", "Hook suspects");
+            A("rep.hooksuspects.h2", "钩子嫌疑（知识库 × 实测占用）", "Hook suspects (catalog x measured occupancy)");
+            A("rep.hooksuspects.hint",
+              "这些结论来自三件事：读该软件的配置、看它是否在运行、对照引擎 A 的实测占用。"
+              + "只有「已确认」表示配置明确写了且进程在跑；其余等级都带着不确定性，请按等级阅读。",
+              "These conclusions come from three things: reading the software's config, checking whether it is running, "
+              + "and comparing against engine A's measurement. Only Confirmed means the config declares the key and the "
+              + "process runs; every other level carries uncertainty — read it accordingly.");
+            A("rep.hooksuspects.levelsTitle", "证据等级定义", "Evidence levels");
+            A("rep.hooksuspects.empty",
+              "本次没有钩子嫌疑记录。可能原因：知识库里没有 hook/mixed 条目，或它们的键位都不在引擎 A 的探测网格内；"
+              + "也可能是知识库加载失败（见运行日志）。",
+              "No hook-suspect records this run. Possible reasons: the catalog has no hook/mixed entries, none of their "
+              + "keys are inside engine A's probe grid, or the catalog failed to load (see the run log).");
+            A("rep.hooksuspects.count", "（{0} 条）", " ({0})");
+            A("rep.hooksuspects.col.software", "软件", "Software");
+            A("rep.hooksuspects.col.module", "模块", "Module");
+            A("rep.hooksuspects.col.process", "进程在跑", "Process running");
+            A("rep.hooksuspects.col.config", "配置可读", "Config readable");
+            A("rep.hooksuspects.col.source", "来源", "Source");
+
+            A("rep.autoprobe.h2", "自动归属（引擎 A × B）", "Auto-attribution (engines A x B)");
+            A("rep.autoprobe.hint",
+              "对已占用组合逐个模拟按下，用引擎 B 的归属报告问出主人。"
+              + "「无响应」= 按下去了但持有者没收到——高度怀疑被钩子吞掉。含 Win、Alt+F4、Alt+Tab 等危险组合被硬编码排除。",
+              "Occupied combinations are pressed one by one and engine B's attribution reports are used to identify "
+              + "the owner. \"No response\" means the key was pressed but the owner never received it — very likely "
+              + "swallowed by a hook. Dangerous combinations (anything with Win, Alt+F4, Alt+Tab, etc.) are hard-coded exclusions.");
+            A("rep.autoprobe.empty",
+              "本次未采集自动归属。采集方式：命令行 <code>HotkeyHound.exe --attribute-all --yes [--max 30]</code>，"
+              + "或在图形界面「按键归属」页点「自动归属已占用组合」（会先弹确认框）。默认不按任何键，必须先明确同意。",
+              "No auto-attribution was collected this run. To collect it, run "
+              + "<code>HotkeyHound.exe --attribute-all --yes [--max 30]</code>, or click Auto-attribute occupied "
+              + "combinations on the Attribution page (a confirmation dialog appears first). Nothing is pressed by default.");
+            A("rep.autoprobe.mode", "模式：{0}", "Mode: {0}");
+            A("rep.autoprobe.counts", "已归属 {0}　无响应 {1}　跳过 {2}",
+              "Attributed {0}  No response {1}  Skipped {2}");
+            A("rep.autoprobe.col.combo", "组合键", "Combination");
+            A("rep.autoprobe.col.outcome", "结果", "Result");
+            A("rep.autoprobe.col.owner", "归属进程", "Owner process");
+            A("rep.autoprobe.col.note", "说明", "Explanation");
+            A("rep.autoprobe.nonePressed", "（dry-run 或中止：没有真正按下）", "(dry-run or aborted: nothing was actually pressed)");
+
+            A("rep.advice.hookFree",
+              "<div class=\"warn\"><b>{0}</b> 的钩子嫌疑命中 {1}（证据：{2}），但引擎 A 实测这些组合是空闲的。"
+              + "按下去没反应？很可能被它的钩子吞了——去它的设置里改。来源：{3}</div>",
+              "<div class=\"warn\"><b>{0}</b> has hook suspicions on {1} (evidence: {2}), yet engine A measured these "
+              + "combinations as free. Nothing happens when you press them? They are very likely swallowed by its hook — "
+              + "change it in that software's settings. Source: {3}</div>");
+
+            A("rep.method.auto.h", "自动归属的风险边界", "Risk boundaries of auto-attribution");
+            A("rep.method.auto.body",
+              "<p>自动归属会<strong>真的按下</strong>热键，因此默认是 dry-run：不带 <code>--yes</code> 时只打印计划，"
+              + "一次都不按；图形界面必须先通过确认框。含 Win 的组合、<code>Alt+F4</code>、<code>Alt+Tab</code>、"
+              + "<code>Alt+Esc</code>、<code>Alt+Space</code>、<code>Ctrl+Esc</code>、<code>Ctrl+Alt+Del</code>、"
+              + "<code>Ctrl+Shift+Esc</code>、<code>Ctrl+Alt+Tab</code> 是硬编码黑名单，不可配置放宽。"
+              + "每次按键间隔至少 400 毫秒，归属等待 1.2 秒，按 Esc 立即中止；中止、超时与跳过的数量都如实计入统计。</p>",
+              "<p>Auto-attribution <strong>really presses</strong> hotkeys, so it is dry-run by default: without "
+              + "<code>--yes</code> it only prints the plan and presses nothing; the GUI requires a confirmation dialog. "
+              + "Anything with Win, plus <code>Alt+F4</code>, <code>Alt+Tab</code>, <code>Alt+Esc</code>, "
+              + "<code>Alt+Space</code>, <code>Ctrl+Esc</code>, <code>Ctrl+Alt+Del</code>, <code>Ctrl+Shift+Esc</code> and "
+              + "<code>Ctrl+Alt+Tab</code> is a hard-coded exclusion and cannot be relaxed. There is at least 400 ms "
+              + "between key presses and 1.2 s of attribution wait; Esc aborts immediately, and aborts, timeouts and skips "
+              + "are all counted honestly.</p>");
+            A("rep.method.catalog.h", "钩子知识库怎么读", "How to read the hook catalog");
+            A("rep.method.catalog.body",
+              "<p>知识库只读配置、只看进程，不注入、不结束任何进程。每条结论都带证据等级："
+              + "<b>已确认</b>（配置写了 + 进程在跑）、<b>高度怀疑</b>（只有一侧证据）、"
+              + "<b>已知默认</b>（官方默认，本机没读到配置）、<b>仅供参考</b>（确定用钩子但键位未知）。"
+              + "「未在知识库中」不等于「没有钩子」——知识库只覆盖已知软件，判定按键是否真被吞掉仍应使用引擎 C。</p>",
+              "<p>The catalog only reads configs and checks processes; it injects nothing and ends no process. Every "
+              + "conclusion carries an evidence level: <b>Confirmed</b> (declared in config and the process runs), "
+              + "<b>Highly suspected</b> (only one side of the evidence), <b>Known default</b> (official default; the local "
+              + "config was unreadable), <b>Reference only</b> (definitely uses hooks, keys unknown). Not being in the "
+              + "catalog does not mean there is no hook — it only covers known software. Use engine C to judge whether a "
+              + "key is actually swallowed.</p>");
+
+            A("rep.list.sep", "、", ", ");
         }
 
         // ------------------------------------------------------------------ 术语表

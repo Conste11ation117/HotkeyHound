@@ -10,7 +10,7 @@ namespace HotkeyHound.Ui
     /// <summary>
     /// 按键归属（引擎 B）。
     /// 铁律：本页加载时绝不安装任何钩子——AttributionEngine.Start() 只在
-    /// 用户点「开始监听」时才被调用，停止时立刻 UnhookWindowsHookEx。
+    /// 用户点「开始监听」或确认「自动归属」时才被调用，停止时立刻 UnhookWindowsHookEx。
     /// </summary>
     public sealed class AttributionTab : UserControl
     {
@@ -18,10 +18,17 @@ namespace HotkeyHound.Ui
         private readonly Button _toggleButton;
         private readonly Button _clearButton;
         private readonly Button _copyButton;
+        private readonly Button _autoButton;
         private readonly Label _statusLabel;
+        private readonly Label _autoStatus;
         private readonly Label _warningLabel;
         private readonly Label _hint;
         private readonly ListView _list;
+        private readonly ListView _autoList;
+
+        private volatile bool _autoRunning;
+        private volatile bool _autoAbort;
+        private int _autoPlanned;
 
         public AttributionTab(MainForm host)
         {
@@ -29,7 +36,7 @@ namespace HotkeyHound.Ui
 
             var top = new Panel();
             top.Dock = DockStyle.Top;
-            top.Height = 132;
+            top.Height = 196;
 
             var title = new Label();
             title.Text = L10n.T("ui.at.title");
@@ -75,6 +82,19 @@ namespace HotkeyHound.Ui
             _warningLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             _warningLabel.Text = BuildWarningText();
 
+            _autoButton = new Button();
+            _autoButton.Text = L10n.T("ui.at.autoButton");
+            _autoButton.Size = new Size(480, 34);
+            _autoButton.Location = new Point(0, 128);
+            _autoButton.Click += OnAutoClick;
+
+            _autoStatus = new Label();
+            _autoStatus.Location = new Point(490, 136);
+            _autoStatus.Size = new Size(560, 24);
+            _autoStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            _autoStatus.ForeColor = Color.DimGray;
+            _autoStatus.Text = "";
+
             top.Controls.Add(title);
             top.Controls.Add(_hint);
             top.Controls.Add(_toggleButton);
@@ -82,6 +102,13 @@ namespace HotkeyHound.Ui
             top.Controls.Add(_copyButton);
             top.Controls.Add(_statusLabel);
             top.Controls.Add(_warningLabel);
+            top.Controls.Add(_autoButton);
+            top.Controls.Add(_autoStatus);
+            // 锚定右侧的标签在构造时父容器还很窄，必须按实际宽度重新定位，否则会被推到窗口外。
+            top.Resize += delegate (object s, EventArgs e)
+            {
+                _warningLabel.Left = Math.Max(480, top.ClientSize.Width - _warningLabel.Width - 12);
+            };
 
             _list = new ListView();
             _list.Dock = DockStyle.Fill;
@@ -96,7 +123,43 @@ namespace HotkeyHound.Ui
             _list.Columns.Add(L10n.T("ui.col.path"), 320);
             _list.Columns.Add(L10n.T("ui.at.col.elevated"), 80);
 
-            Controls.Add(_list);
+            var autoHeader = new Label();
+            autoHeader.Dock = DockStyle.Top;
+            autoHeader.Height = 24;
+            autoHeader.Text = L10n.T("ui.at.autoListTitle");
+            autoHeader.ForeColor = Color.DimGray;
+            autoHeader.TextAlign = ContentAlignment.MiddleLeft;
+
+            _autoList = new ListView();
+            _autoList.Dock = DockStyle.Fill;
+            _autoList.View = View.Details;
+            _autoList.FullRowSelect = true;
+            _autoList.GridLines = true;
+            _autoList.HideSelection = false;
+            _autoList.Columns.Add(L10n.T("ui.col.combo"), 160);
+            _autoList.Columns.Add(L10n.T("ui.at.autoCol.outcome"), 100);
+            _autoList.Columns.Add(L10n.T("ui.at.autoCol.owner"), 180);
+            _autoList.Columns.Add(L10n.T("ui.at.autoCol.note"), 460);
+
+            var split = new SplitContainer();
+            split.Dock = DockStyle.Fill;
+            split.Orientation = Orientation.Horizontal;
+            split.FixedPanel = FixedPanel.Panel2;
+            split.Panel2MinSize = 110;
+            split.Panel1.Controls.Add(_list);
+            split.Panel2.Controls.Add(_autoList);
+            split.Panel2.Controls.Add(autoHeader);
+            split.SizeChanged += delegate (object s, EventArgs e)
+            {
+                try
+                {
+                    int wanted = Math.Max(140, split.Height / 3);
+                    if (split.Height - wanted >= split.Panel2MinSize) split.SplitterDistance = split.Height - wanted;
+                }
+                catch (Exception) { }
+            };
+
+            Controls.Add(split);
             Controls.Add(top);
 
             _host.Attribution.RecordReceived += OnRecordReceived;
@@ -148,6 +211,11 @@ namespace HotkeyHound.Ui
 
         private void OnToggleClick(object sender, EventArgs e)
         {
+            if (_autoRunning)
+            {
+                _autoAbort = true;
+                return;
+            }
             AttributionEngine engine = _host.Attribution;
             if (engine.IsRunning)
             {
@@ -200,11 +268,155 @@ namespace HotkeyHound.Ui
             }
         }
 
+        private void OnAutoClick(object sender, EventArgs e)
+        {
+            if (_autoRunning)
+            {
+                _autoAbort = true;
+                _autoStatus.Text = L10n.T("ui.at.autoAborting");
+                return;
+            }
+
+            ScanSnapshot snapshot = _host.Snapshot;
+            if (snapshot == null || snapshot.Occupancy == null)
+            {
+                MessageBox.Show(this, L10n.T("ui.at.autoNeedScan"), AppInfo.Title,
+                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            DialogResult answer = MessageBox.Show(this, L10n.T("ui.at.autoConfirmBody"),
+                L10n.T("ui.at.autoConfirmTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
+
+            _autoRunning = true;
+            _autoAbort = false;
+            _autoPlanned = AutoProbe.Plan(snapshot.Occupancy, AutoProbe.DefaultMax).Plan.Count;
+            _autoList.Items.Clear();
+            _autoButton.Text = L10n.T("ui.at.autoButtonStop");
+            _autoStatus.ForeColor = Color.FromArgb(150, 90, 10);
+            _autoStatus.Text = L10n.T("ui.at.autoStarting");
+            _toggleButton.Enabled = false;
+
+            var thread = new Thread(delegate ()
+            {
+                bool startedHere = false;
+                bool ok = true;
+                string error = null;
+                AutoProbeResult result = null;
+                try
+                {
+                    AttributionEngine engine = _host.Attribution;
+                    if (!engine.IsRunning)
+                    {
+                        startedHere = true;
+                        if (!engine.Start())
+                        {
+                            ok = false;
+                            error = engine.LastError;
+                        }
+                    }
+                    if (ok)
+                    {
+                        result = AutoProbe.Run(engine, snapshot.Occupancy, AutoProbe.DefaultMax, _host.Log,
+                            delegate () { return _autoAbort; },
+                            delegate (AutoProbeRecord record)
+                            {
+                                if (IsDisposed) return;
+                                try { BeginInvoke(new Action<AutoProbeRecord>(AppendAutoRecord), record); }
+                                catch (Exception) { }
+                            });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    error = ex.Message;
+                }
+                finally
+                {
+                    if (startedHere)
+                    {
+                        try { _host.Attribution.Stop(); } catch (Exception) { }
+                    }
+                }
+                try
+                {
+                    BeginInvoke(new Action(delegate () { OnAutoFinished(ok, error, result); }));
+                }
+                catch (Exception) { }
+            });
+            thread.IsBackground = true;
+            thread.Name = "HotkeyHound-AutoProbe";
+            thread.Start();
+        }
+
+        private void AppendAutoRecord(AutoProbeRecord record)
+        {
+            if (IsDisposed || record == null) return;
+            try
+            {
+                var item = new ListViewItem(record.Combo == null ? L10n.T("common.none") : record.Combo.Display());
+                item.SubItems.Add(AutoProbeOutcomeName(record.Outcome));
+                item.SubItems.Add(record.Outcome == AutoProbeOutcome.Attributed && !string.IsNullOrEmpty(record.ProcessName)
+                    ? record.ProcessName + " (PID " + record.Pid + ")"
+                    : L10n.T("ui.at.autoNoOwner"));
+                item.SubItems.Add(record.Note);
+                switch (record.Outcome)
+                {
+                    case AutoProbeOutcome.Attributed: item.ForeColor = Color.FromArgb(20, 110, 40); break;
+                    case AutoProbeOutcome.NoResponse: item.ForeColor = Color.FromArgb(150, 40, 30); break;
+                    default: item.ForeColor = Color.Gray; break;
+                }
+                _autoList.Items.Add(item);
+                item.EnsureVisible();
+                _autoStatus.Text = L10n.F("ui.at.autoProgress", _autoList.Items.Count, _autoPlanned,
+                    record.Combo == null ? "" : record.Combo.Display());
+            }
+            catch (Exception) { }
+        }
+
+        private static string AutoProbeOutcomeName(AutoProbeOutcome outcome)
+        {
+            switch (outcome)
+            {
+                case AutoProbeOutcome.Attributed: return L10n.T("auto.outcome.attributed");
+                case AutoProbeOutcome.NoResponse: return L10n.T("auto.outcome.noResponse");
+                default: return L10n.T("auto.outcome.skipped");
+            }
+        }
+
+        private void OnAutoFinished(bool ok, string error, AutoProbeResult result)
+        {
+            if (IsDisposed) return;
+            _autoRunning = false;
+            _autoButton.Text = L10n.T("ui.at.autoButton");
+            _toggleButton.Enabled = true;
+            if (!ok)
+            {
+                _autoStatus.ForeColor = Color.FromArgb(170, 40, 30);
+                _autoStatus.Text = L10n.F("ui.at.autoFailed", error ?? L10n.T("common.unknown"));
+                return;
+            }
+            if (result == null) return;
+            _autoStatus.ForeColor = Color.FromArgb(60, 90, 60);
+            _autoStatus.Text = L10n.F("ui.at.autoDone",
+                result.CountOf(AutoProbeOutcome.Attributed),
+                result.CountOf(AutoProbeOutcome.NoResponse),
+                result.SkippedTotal);
+            if (result.Aborted) _autoStatus.Text += "　" + L10n.T("ui.at.autoAborted");
+        }
+
         private void OnClearClick(object sender, EventArgs e)
         {
+            if (_autoRunning) return;
             _host.Attribution.Clear();
             SessionRecords.ClearAttribution();
+            SessionRecords.ClearAutoProbe();
             _list.Items.Clear();
+            _autoList.Items.Clear();
+            _autoStatus.Text = "";
             _statusLabel.Text = L10n.T("ui.at.cleared");
         }
 

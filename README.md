@@ -18,26 +18,40 @@ holding them*, and *why a key you pressed did nothing at all*.
 
 ---
 
-## Why another hotkey tool?
+## How it compares
 
-The two well-known options leave a gap that is exactly where the confusing cases live:
+Four tools in this space are alive today, and they answer different questions. This table is meant
+to be honest — where a competitor does something better, it says so.
 
-| | Hotkey Detective | Hotkey Screener | **HotkeyHound** |
-|---|---|---|---|
-| Enumerate which combinations are already taken | — | Yes | **Yes (~1650 probed, ~200 found on a typical machine)** |
-| Attribute a hotkey to a process when pressed | Yes | — | **Yes (~330 ms end to end)** |
-| Detect keys swallowed by a **keyboard hook** | — | — | **Yes** |
-| Explain *why* a combination is taken (read the owning app's config) | — | — | **Yes — PowerToys, Everything, OBS, NVIDIA, Wallpaper Engine, MSI Afterburner** |
-| Report + advice you can act on | — | — | **Self-contained HTML, bilingual** |
-| Source and licence | GPL-3.0, last release 2024 | Closed source | **MIT, readable source** |
+| | HotkeyScan | Hotkey Screener | Hotkey Detective | **HotkeyHound** |
+|---|---|---|---|---|
+| Enumerate occupied combinations | 761 | lists registered hotkeys | — | **1650** |
+| Name the owner of a registered hotkey | infers it from what changes on screen | global hook + synthetic press | global hook, you press | **global hook, you press — or an opt-in batch press** |
+| Keys eaten by a **keyboard hook** | only when the press causes something visible | documented blind spot | documented blind spot | **dedicated detector + config catalog, with evidence levels** |
+| Explain *why* a combination is taken | reads PowerToys / ShareX / OBS / AHK configs | — | — | **reads six app families, and prints the config path it used** |
+| Key monitor (stuck modifiers, remaps, filter drivers) | **yes** | — | — | not yet |
+| 32-bit processes | 64-bit only | **32 + 64** | ships x86 and x64 | x64 only (roadmap) |
+| Report you can hand to someone | — | — | — | **self-contained HTML, bilingual** |
+| Licence | MIT | closed source | GPL-3.0 | MIT |
 
-Both of the existing tools are honest work, and each does its one job. But "my hotkey does nothing"
-has three very different causes — the key is taken by a registered hotkey, the key never reaches the
-system because an upstream hook eats it, or the combination is simply free and the problem lies
-elsewhere. Only the third answer is a diagnosis; the first two are guesses. HotkeyHound exists to
-tell them apart.
+In practice: **HotkeyScan is the broader keyboard-health toolkit** (its key monitor is genuinely
+useful), **Hotkey Screener is the most direct attributor for registered hotkeys**, and
+**HotkeyHound is the one that separates the three reasons a shortcut does nothing** — claimed by a
+registration, eaten by a hook before it ever reaches the system, or simply not a global shortcut at
+all — and shows its evidence for every conclusion instead of asserting one.
+
+Two boundaries nobody in this space can cross: **hook-based shortcuts and in-app shortcuts cannot be
+listed**, because Windows keeps them out of every table it has. A tool that claims otherwise is
+guessing; this one tells you the difference between "measured", "read from a config" and "known
+default".
+
+Older options exist too — NirSoft's HotKeysList (lists registrations, names no owners, listed up to
+Windows 8) and kernel-level anti-rootkit tools like PCHunter or OpenArk, which can read win32k's
+hotkey table but need an unsigned driver, are blocked by Secure Boot / HVCI on current Windows, and
+still cannot see hooks.
 
 ---
+
 
 ## The problem it was built for
 
@@ -61,11 +75,18 @@ which is exactly the category that swallows keys silently.
 | **D — Config aggregation** | Reads hotkey settings from software that stores them in plain files (PowerToys, Everything, OBS, NVIDIA ShadowPlay registry, Wallpaper Engine, MSI Afterburner) and diffs them against the measured results. | No | No |
 
 Engine A and D together produce a **truth table** with four kinds of rows:
-
 - declared **and** measured (the software really holds it)
 - declared but **not** registered (the software is not running, or it uses a hook — the tool says so)
 - registered but **nobody claims it** (configs that cannot be read: input methods, chat apps, drivers)
 - free (safe to claim — the report lists concrete candidates)
+
+On top of that sits a **hook-suspect catalog**. For software that implements shortcuts with a
+keyboard hook — PowerToys Keyboard Manager, input methods, QQ/WeChat, AutoHotkey scripts, vendor
+control centres, screen-mirroring tools — no system table will ever list the keys. HotkeyHound reads
+their configuration where it can, checks whether the software is running, and reports a *suspect*
+with an explicit evidence level (measured / read from config / known default / reference only) and
+the config path it used. It never presents a guess as a fact.
+
 
 ## Quick start
 
@@ -87,6 +108,8 @@ HotkeyHound.exe --lang en --scan --report en.html # English output
 HotkeyHound.exe --elevate --listen                # restart as administrator, then listen
 HotkeyHound.exe --selftest                        # self-test (installs hooks; see safety)
 HotkeyHound.exe --selftest --no-hooks             # self-test without touching hooks
+HotkeyHound.exe --attribute-all --dry-run         # plan a batch attribution, press nothing
+HotkeyHound.exe --attribute-all --yes             # press each occupied hotkey, record the owner
 ```
 
 ## Safety model

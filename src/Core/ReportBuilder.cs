@@ -35,6 +35,8 @@ namespace HotkeyHound.Core
             BuildTruth(sb, s);
             BuildAttribution(sb, s);
             BuildHookCheck(sb, s);
+            BuildHookSuspects(sb, s);
+            BuildAutoProbe(sb, s);
             BuildDeclared(sb, s);
             BuildAdvice(sb, s);
             BuildMethod(sb, s);
@@ -116,6 +118,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
             Card(sb, s.FreeCount, L10n.T("rep.card.free"));
             Card(sb, s.DeclaredCount, L10n.T("rep.card.declared"));
             Card(sb, s.Truth.Rows.Count, L10n.T("rep.card.truthRows"));
+            Card(sb, s.HookSuspects == null ? 0 : s.HookSuspects.Count, L10n.T("rep.card.hookSuspects"));
             Card(sb, s.Truth.CountOf(TruthKind.MatchesDeclared), L10n.T("rep.card.matched"));
             Card(sb, s.Truth.CountOf(TruthKind.DeclaredButNotRegistered), L10n.T("rep.card.declaredOnly"));
             Card(sb, s.Truth.CountOf(TruthKind.RegisteredButUnowned), L10n.T("rep.card.unowned"));
@@ -341,6 +344,142 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
             }
         }
 
+        private static void BuildHookSuspects(StringBuilder sb, ScanSnapshot s)
+        {
+            sb.Append("<h2 id=\"hooksuspects\">").Append(Html.Escape(L10n.T("rep.hooksuspects.h2"))).Append("</h2>\r\n");
+            sb.Append("<div class=\"hint\">").Append(Html.Escape(L10n.T("rep.hooksuspects.hint"))).Append("</div>\r\n");
+
+            HookEvidence[] order = new HookEvidence[]
+            {
+                HookEvidence.Confirmed, HookEvidence.HighlySuspected,
+                HookEvidence.KnownDefault, HookEvidence.ReferenceOnly
+            };
+
+            sb.Append("<div class=\"group\"><div class=\"hd\">").Append(Html.Escape(L10n.T("rep.hooksuspects.levelsTitle")))
+              .Append("</div><div class=\"bd\"><ul>\r\n");
+            foreach (HookEvidence ev in order)
+            {
+                sb.Append("<li><b>").Append(Html.Escape(HookCatalog.EvidenceName(ev))).Append("</b>：")
+                  .Append(Html.Escape(HookCatalog.EvidenceExplain(ev))).Append("</li>\r\n");
+            }
+            sb.Append("</ul></div></div>\r\n");
+
+            List<HookSuspect> list = s.HookSuspects;
+            if (list == null || list.Count == 0)
+            {
+                sb.Append("<div class=\"hint\">").Append(Html.Escape(L10n.T("rep.hooksuspects.empty"))).Append("</div>\r\n");
+                return;
+            }
+
+            foreach (HookEvidence ev in order)
+            {
+                var rows = new List<HookSuspect>();
+                foreach (HookSuspect r in list) if (r.Evidence == ev) rows.Add(r);
+
+                sb.Append("<div class=\"group\" id=\"hooks-").Append(EvidenceSlug(ev)).Append("\"><div class=\"hd\">")
+                  .Append(Html.Escape(HookCatalog.EvidenceName(ev)))
+                  .Append(Html.Escape(L10n.F("rep.hooksuspects.count", rows.Count))).Append("</div>\r\n");
+                sb.Append("<div class=\"bd\">\r\n<p class=\"hint\">").Append(Html.Escape(HookCatalog.EvidenceExplain(ev))).Append("</p>\r\n");
+                if (rows.Count == 0)
+                {
+                    sb.Append("<p class=\"hint\">").Append(Html.Escape(L10n.T("rep.truth.emptyKind"))).Append("</p></div></div>\r\n");
+                    continue;
+                }
+
+                sb.Append("<div style=\"overflow:auto;max-height:460px\"><table><thead><tr>")
+                  .Append("<th style=\"width:170px\">").Append(Html.Escape(L10n.T("rep.autoprobe.col.combo"))).Append("</th>")
+                  .Append("<th style=\"width:150px\">").Append(Html.Escape(L10n.T("rep.hooksuspects.col.software"))).Append("</th>")
+                  .Append("<th style=\"width:130px\">").Append(Html.Escape(L10n.T("rep.hooksuspects.col.module"))).Append("</th>")
+                  .Append("<th style=\"width:80px\">").Append(Html.Escape(L10n.T("rep.hooksuspects.col.process"))).Append("</th>")
+                  .Append("<th style=\"width:80px\">").Append(Html.Escape(L10n.T("rep.hooksuspects.col.config"))).Append("</th>")
+                  .Append("<th>").Append(Html.Escape(L10n.T("ui.col.note"))).Append("</th>")
+                  .Append("<th style=\"width:220px\">").Append(Html.Escape(L10n.T("rep.hooksuspects.col.source"))).Append("</th>")
+                  .Append("</tr></thead><tbody>\r\n");
+
+                foreach (HookSuspect r in rows)
+                {
+                    sb.Append("<tr>");
+                    sb.Append("<td class=\"k\">").Append(r.Combo == null ? "<span class=\"hint\">" + Html.Escape(L10n.T("ui.hs.unknownCombo")) + "</span>" : Html.Escape(r.Combo.Display())).Append("</td>");
+                    sb.Append("<td>").Append(Html.Escape(r.Software)).Append("</td>");
+                    sb.Append("<td>").Append(Html.Escape(r.Module)).Append("</td>");
+                    sb.Append("<td>").Append(Html.Escape(r.ProcessRunning ? L10n.T("common.yes") : L10n.T("common.no"))).Append("</td>");
+                    sb.Append("<td>").Append(Html.Escape(HookCatalog.ConfigStateName(r.ConfigState))).Append("</td>");
+                    sb.Append("<td>").Append(Html.Escape(r.Note)).Append("</td>");
+                    sb.Append("<td class=\"hint\">");
+                    if (!string.IsNullOrEmpty(r.SourceLabel)) sb.Append(Html.Escape(r.SourceLabel)).Append("<br>");
+                    sb.Append(string.IsNullOrEmpty(r.SourcePath) ? Html.Escape(L10n.T("common.none")) : Html.Escape(r.SourcePath));
+                    sb.Append("</td></tr>\r\n");
+                }
+                sb.Append("</tbody></table></div>\r\n</div></div>\r\n");
+            }
+        }
+
+        private static string EvidenceSlug(HookEvidence ev)
+        {
+            switch (ev)
+            {
+                case HookEvidence.Confirmed: return "confirmed";
+                case HookEvidence.HighlySuspected: return "suspected";
+                case HookEvidence.KnownDefault: return "default";
+                default: return "reference";
+            }
+        }
+
+        private static void BuildAutoProbe(StringBuilder sb, ScanSnapshot s)
+        {
+            sb.Append("<h2 id=\"autoprobe\">").Append(Html.Escape(L10n.T("rep.autoprobe.h2"))).Append("</h2>\r\n");
+            sb.Append("<div class=\"hint\">").Append(Html.Escape(L10n.T("rep.autoprobe.hint"))).Append("</div>\r\n");
+
+            AutoProbeResult result = SessionRecords.AutoProbe();
+            if (result == null)
+            {
+                sb.Append("<div class=\"hint\">").Append(L10n.T("rep.autoprobe.empty")).Append("</div>\r\n");
+                return;
+            }
+
+            sb.Append("<p>").Append(Html.Escape(L10n.F("rep.autoprobe.mode",
+                result.DryRun ? L10n.T("auto.flag.dryRun") : L10n.T("auto.flag.real"))));
+            if (result.Aborted) sb.Append("　").Append(Html.Escape(L10n.T("auto.flag.aborted")));
+            sb.Append("</p>\r\n<div class=\"cards\">\r\n");
+            Card(sb, result.CountOf(AutoProbeOutcome.Attributed), L10n.T("auto.outcome.attributed"));
+            Card(sb, result.CountOf(AutoProbeOutcome.NoResponse), L10n.T("auto.outcome.noResponse"));
+            Card(sb, result.SkippedTotal, L10n.T("auto.outcome.skipped"));
+            sb.Append("</div>\r\n");
+
+            if (result.Records.Count == 0)
+            {
+                sb.Append("<div class=\"hint\">").Append(Html.Escape(L10n.T("rep.autoprobe.nonePressed"))).Append("</div>\r\n");
+                return;
+            }
+
+            sb.Append("<div style=\"overflow:auto;max-height:460px\"><table><thead><tr>")
+              .Append("<th style=\"width:190px\">").Append(Html.Escape(L10n.T("rep.autoprobe.col.combo"))).Append("</th>")
+              .Append("<th style=\"width:110px\">").Append(Html.Escape(L10n.T("rep.autoprobe.col.outcome"))).Append("</th>")
+              .Append("<th style=\"width:200px\">").Append(Html.Escape(L10n.T("rep.autoprobe.col.owner"))).Append("</th>")
+              .Append("<th>").Append(Html.Escape(L10n.T("rep.autoprobe.col.note"))).Append("</th>")
+              .Append("</tr></thead><tbody>\r\n");
+            foreach (AutoProbeRecord r in result.Records)
+            {
+                sb.Append("<tr><td class=\"k\">").Append(r.Combo == null ? "<span class=\"hint\">" + Html.Escape(L10n.T("common.none")) + "</span>" : Html.Escape(r.Combo.Display())).Append("</td>");
+                sb.Append("<td>").Append(Html.Escape(AutoProbeOutcomeName(r.Outcome))).Append("</td>");
+                sb.Append("<td>").Append(r.Outcome == AutoProbeOutcome.Attributed
+                    ? Html.Escape((r.ProcessName ?? L10n.T("attr.unknownProc")) + " (PID " + r.Pid + ")")
+                    : "<span class=\"hint\">" + Html.Escape(L10n.T("ui.at.autoNoOwner")) + "</span>").Append("</td>");
+                sb.Append("<td>").Append(Html.Escape(r.Note)).Append("</td></tr>\r\n");
+            }
+            sb.Append("</tbody></table></div>\r\n");
+        }
+
+        private static string AutoProbeOutcomeName(AutoProbeOutcome outcome)
+        {
+            switch (outcome)
+            {
+                case AutoProbeOutcome.Attributed: return L10n.T("auto.outcome.attributed");
+                case AutoProbeOutcome.NoResponse: return L10n.T("auto.outcome.noResponse");
+                default: return L10n.T("auto.outcome.skipped");
+            }
+        }
+
         private static void BuildDeclared(StringBuilder sb, ScanSnapshot s)
         {
             sb.Append("<h2 id=\"declared\">").Append(Html.Escape(L10n.T("rep.declared.h2"))).Append("</h2>\r\n");
@@ -465,6 +604,42 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
                 sb.Append(L10n.T("rep.advice.freeOkEnd")).Append("\r\n");
             }
 
+            var freeCombos = new HashSet<string>(StringComparer.Ordinal);
+            foreach (OccupancyResult occ in s.Occupancy)
+            {
+                if (occ == null || occ.Combo == null || occ.Occupied) continue;
+                freeCombos.Add(occ.Combo.Normalize());
+            }
+            if (s.HookSuspects != null)
+            {
+                var groups = new Dictionary<string, List<HookSuspect>>(StringComparer.Ordinal);
+                var groupOrder = new List<string>();
+                foreach (HookSuspect r in s.HookSuspects)
+                {
+                    if (r.Combo == null) continue;
+                    if (r.Evidence != HookEvidence.Confirmed && r.Evidence != HookEvidence.HighlySuspected) continue;
+                    if (!freeCombos.Contains(r.Combo.Normalize())) continue;
+                    string key = r.Software + "|" + (int)r.Evidence;
+                    List<HookSuspect> bucket;
+                    if (!groups.TryGetValue(key, out bucket))
+                    {
+                        bucket = new List<HookSuspect>();
+                        groups[key] = bucket;
+                        groupOrder.Add(key);
+                    }
+                    bucket.Add(r);
+                }
+                foreach (string key in groupOrder)
+                {
+                    List<HookSuspect> bucket = groups[key];
+                    string source = string.IsNullOrEmpty(bucket[0].SourcePath) ? "" : bucket[0].SourcePath;
+                    sb.Append(L10n.F("rep.advice.hookFree", Html.Escape(bucket[0].Software),
+                                     FormatSuspectCombos(bucket), HookCatalog.EvidenceName(bucket[0].Evidence),
+                                     Html.Escape(source))).Append("\r\n");
+                    count++;
+                }
+            }
+
             if (unowned == 0 && declaredNotReg == 0 && count == 0 && freeCount == 0)
             {
                 sb.Append(L10n.T("rep.advice.none")).Append("\r\n");
@@ -482,6 +657,20 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
             for (int i = 0; i < shown; i++)
             {
                 if (i > 0) sb.Append("、");
+                sb.Append("<code>").Append(Html.Escape(rows[i].Combo.Display())).Append("</code>");
+            }
+            if (rows.Count > maxInline) sb.Append(L10n.T("rep.list.more"));
+            return sb.ToString();
+        }
+
+        private static string FormatSuspectCombos(List<HookSuspect> rows)
+        {
+            const int maxInline = 8;
+            var sb = new StringBuilder();
+            int shown = rows.Count <= maxInline ? rows.Count : maxInline;
+            for (int i = 0; i < shown; i++)
+            {
+                if (i > 0) sb.Append(L10n.T("rep.list.sep"));
                 sb.Append("<code>").Append(Html.Escape(rows[i].Combo.Display())).Append("</code>");
             }
             if (rows.Count > maxInline) sb.Append(L10n.T("rep.list.more"));
@@ -520,6 +709,11 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
             sb.Append(L10n.T("rep.method.decl.b2")).Append("\r\n");
             sb.Append(L10n.T("rep.method.decl.b3")).Append("\r\n");
             sb.Append("</ul>\r\n");
+
+            sb.Append("<h3>").Append(Html.Escape(L10n.T("rep.method.auto.h"))).Append("</h3>\r\n");
+            sb.Append(L10n.T("rep.method.auto.body")).Append("\r\n");
+            sb.Append("<h3>").Append(Html.Escape(L10n.T("rep.method.catalog.h"))).Append("</h3>\r\n");
+            sb.Append(L10n.T("rep.method.catalog.body")).Append("\r\n");
 
             sb.Append("<h3>").Append(Html.Escape(L10n.T("rep.method.log.h"))).Append("</h3>\r\n<pre class=\"log\">");
             foreach (string line in s.Log) sb.Append(Html.Escape(line)).Append('\n');

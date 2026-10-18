@@ -24,6 +24,7 @@ namespace HotkeyHound.Ui
         private ReportTab _reportTab;
         private AttributionTab _attributionTab;
         private HookCheckTab _hookCheckTab;
+        private HookSuspectsTab _hookSuspectsTab;
         private Panel _banner;
 
         private readonly AttributionEngine _attribution;
@@ -69,7 +70,7 @@ namespace HotkeyHound.Ui
         private void CapturePages(string dir)
         {
             System.IO.Directory.CreateDirectory(dir);
-            string[] names = new string[] { "01-overview", "02-attribution", "03-hookcheck", "04-truth", "05-report" };
+            string[] names = new string[] { "01-overview", "02-attribution", "03-hookcheck", "04-truth", "05-hooksuspects", "06-report" };
             for (int i = 0; i < _tabs.TabPages.Count && i < names.Length; i++)
             {
                 _tabs.SelectedIndex = i;
@@ -218,12 +219,14 @@ namespace HotkeyHound.Ui
             _truthTab = new TruthTab(this);
             _attributionTab = new AttributionTab(this);
             _hookCheckTab = new HookCheckTab(this);
+            _hookSuspectsTab = new HookSuspectsTab(this);
             _reportTab = new ReportTab(this);
 
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.overview"), _overviewTab));
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.attribution"), _attributionTab));
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.hookcheck"), _hookCheckTab));
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.truth"), _truthTab));
+            _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.hooksuspects"), _hookSuspectsTab));
             _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.report"), _reportTab));
 
             split.Panel1.Controls.Add(_tabs);

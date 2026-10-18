@@ -17,6 +17,10 @@ namespace HotkeyHound
         public bool Listen;
         public bool Helper;
         public bool NoHooks;
+        public bool AttributeAll;
+        public bool Yes;
+        public bool DryRun;
+        public int Max = AutoProbe.DefaultMax;
         /// <summary>文档截图模式：给出目录即启用（渲染五个页面后退出，不安装任何钩子）。</summary>
         public string ScreenshotDir;
         public bool Elevate;
@@ -55,6 +59,21 @@ namespace HotkeyHound
                     case "--listen":
                         o.Listen = true;
                         break;
+                    case "--attribute-all":
+                        o.AttributeAll = true;
+                        break;
+                    case "--yes":
+                        o.Yes = true;
+                        break;
+                    case "--dry-run":
+                        o.DryRun = true;
+                        break;
+                    case "--max":
+                        {
+                            int n;
+                            if (i + 1 < args.Length && int.TryParse(args[i + 1], out n)) { o.Max = n; i++; }
+                        }
+                        break;
                     case "--helper":
                         o.Helper = true;
                         break;
@@ -84,6 +103,11 @@ namespace HotkeyHound
                         if (kv.Length == 2 && kv[0].ToLowerInvariant() == "--report") { o.ReportPath = kv[1]; o.Scan = true; }
                         else if (kv.Length == 2 && kv[0].ToLowerInvariant() == "--json") { o.JsonPath = kv[1]; o.Scan = true; }
                         else if (kv.Length == 2 && kv[0].ToLowerInvariant() == "--lang") { o.Lang = kv[1]; }
+                        else if (kv.Length == 2 && kv[0].ToLowerInvariant() == "--max")
+                        {
+                            int n;
+                            if (int.TryParse(kv[1], out n)) o.Max = n;
+                        }
                         break;
                 }
             }
@@ -175,6 +199,20 @@ namespace HotkeyHound
                 }
             }
 
+            if (opts.AttributeAll)
+            {
+                PrepareConsole();
+                try
+                {
+                    return RunAttributeAll(opts);
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine(L10n.F("cli.attr.failed", ex));
+                    return 1;
+                }
+            }
+
             if (opts.Scan)
             {
                 PrepareConsole();
@@ -226,6 +264,108 @@ namespace HotkeyHound
                 }
                 catch (Exception) { }
                 return 1;
+            }
+        }
+
+        /// <summary>
+        /// --attribute-all：先跑引擎 A，再把已占用组合逐个模拟按下（默认只做 dry-run）。
+        /// 只有 --yes 才会安装归属钩子并真的按键，且黑名单永远生效。
+        /// </summary>
+        private static int RunAttributeAll(CliOptions opts)
+        {
+            var log = new LogSink();
+            log.LineAdded += delegate (string line) { Console.WriteLine(line); };
+
+            ScanSnapshot snapshot;
+            try
+            {
+                snapshot = ScanRunner.Run(log, null, System.Threading.CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(L10n.F("cli.scan.failed", ex));
+                return 1;
+            }
+
+            bool willPress = opts.Yes && !opts.DryRun;
+            Console.WriteLine(L10n.F("cli.attr.title", AppInfo.Title, AppInfo.Version));
+            Console.WriteLine(L10n.F("cli.attr.meta", snapshot.OccupiedCount, AutoProbe.ClampMax(opts.Max),
+                              willPress ? L10n.T("cli.attr.mode.real") : L10n.T("cli.attr.mode.dryRun")));
+            Console.WriteLine(new string('-', 72));
+
+            AutoProbeResult result;
+            if (!willPress)
+            {
+                result = AutoProbe.DryRun(snapshot.Occupancy, opts.Max, log);
+                Console.WriteLine(new string('-', 72));
+                Console.WriteLine(L10n.F("cli.attr.dryRunDone", result.PlannedCount, SkippedCount(result)));
+            }
+            else
+            {
+                PrintPlan(AutoProbe.Plan(snapshot.Occupancy, opts.Max));
+                Console.WriteLine(L10n.T("cli.attr.starting"));
+
+                var engine = new AttributionEngine();
+                engine.Logged += delegate (string line) { Console.WriteLine("  " + line); };
+                if (!engine.Start())
+                {
+                    Console.Error.WriteLine(L10n.F("cli.attr.engineFailed", engine.LastError));
+                    return 1;
+                }
+                try
+                {
+                    result = AutoProbe.Run(engine, snapshot.Occupancy, opts.Max, log, null, null);
+                }
+                finally
+                {
+                    try { engine.Stop(); } catch (Exception) { }
+                    try { engine.Dispose(); } catch (Exception) { }
+                }
+                Console.WriteLine(new string('-', 72));
+                Console.WriteLine(L10n.F("cli.attr.done", result.CountOf(AutoProbeOutcome.Attributed),
+                                  result.CountOf(AutoProbeOutcome.NoResponse), SkippedCount(result)));
+                if (result.Aborted) Console.WriteLine(L10n.T("cli.attr.aborted"));
+            }
+
+            if (!string.IsNullOrEmpty(opts.ReportPath))
+            {
+                try
+                {
+                    ReportBuilder.Write(snapshot, opts.ReportPath);
+                    Console.WriteLine(L10n.F("cli.scan.reportWritten", Path.GetFullPath(opts.ReportPath)));
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine(L10n.F("cli.scan.reportWriteFailed", ex.Message));
+                    Console.Error.WriteLine(WritabilityHint(Path.GetDirectoryName(Path.GetFullPath(opts.ReportPath))));
+                    return 1;
+                }
+            }
+            return 0;
+        }
+
+        private static int SkippedCount(AutoProbeResult result)
+        {
+            return result.SkippedTotal;
+        }
+
+        private static void PrintPlan(AutoProbeResult result)
+        {
+            Console.WriteLine(L10n.F("cli.attr.plan", result.PlannedCount, SkippedCount(result)));
+            foreach (AutoProbePlanItem item in result.Plan)
+            {
+                if (item.WillPress)
+                {
+                    Console.WriteLine(L10n.F("cli.attr.willPress", item.Combo.Display()));
+                }
+                else if (item.Combo == null)
+                {
+                    Console.WriteLine(L10n.F("auto.log.skipSummary", item.SkipReason));
+                }
+                else
+                {
+                    Console.WriteLine(L10n.F("cli.attr.skip", item.Combo.Display(), item.SkipReason));
+                }
             }
         }
 
@@ -344,6 +484,8 @@ namespace HotkeyHound
             Console.WriteLine(L10n.T("cli.help.scanDesc"));
             Console.WriteLine(L10n.T("cli.help.listen"));
             Console.WriteLine(L10n.T("cli.help.listenDesc"));
+            Console.WriteLine(L10n.T("cli.help.attributeAll"));
+            Console.WriteLine(L10n.T("cli.help.attributeAllDesc"));
             Console.WriteLine(L10n.T("cli.help.selftest"));
             Console.WriteLine(L10n.T("cli.help.selftestDesc"));
             Console.WriteLine(L10n.T("cli.help.elevate"));

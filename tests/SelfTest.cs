@@ -65,6 +65,7 @@ namespace HotkeyHound
                 RunT3();
                 RunT4(firstScan, log);
                 RunT5(firstScan, log, tempDir);
+                RunT8(firstScan);
                 if (skipHooks)
                 {
                     Skip("T6", "引擎 B 归属链路", "已按 --no-hooks 跳过（该测试会安装全局钩子并注入 DLL）");
@@ -334,7 +335,7 @@ namespace HotkeyHound
             ReportBuilder.Write(snapshot, path);
 
             string html = File.ReadAllText(path, Encoding.UTF8);
-            string[] anchors = new string[] { "id=\"occupancy\"", "id=\"truth\"", "id=\"advice\"" };
+            string[] anchors = new string[] { "id=\"occupancy\"", "id=\"truth\"", "id=\"advice\"", "id=\"hooksuspects\"", "id=\"autoprobe\"" };
             var missing = new List<string>();
             foreach (string a in anchors) if (html.IndexOf(a, StringComparison.Ordinal) < 0) missing.Add(a);
 
@@ -349,6 +350,67 @@ namespace HotkeyHound
                                        doubleEscaped ? "有（不合格）" : "无",
                                        hasHead ? "有" : "无");
             Add("T5", "报告生成", pass, msg);
+        }
+
+        // ---------------------------------------------------------------- T8
+
+        /// <summary>
+        /// 钩子知识库 × 扫描关联 × 自动归属策略（不按键、不装钩子）。
+        /// 只验证「能加载、能产出带证据等级的条目、黑名单与 dry-run 语义正确」。
+        /// </summary>
+        private static void RunT8(List<OccupancyResult> occupancy)
+        {
+            var detail = new StringBuilder();
+            bool pass = true;
+
+            HookCatalog catalog = HookCatalog.Load();
+            int hookEntries = 0;
+            foreach (CatalogEntry e in catalog.Entries) if (e.IsHook) hookEntries++;
+            detail.Append("知识库 ").Append(catalog.Entries.Count).Append(" 条（内嵌 ")
+                  .Append(catalog.EmbeddedCount).Append("，用户 ").Append(catalog.UserCount)
+                  .Append("），其中 hook/mixed ").Append(hookEntries).Append(" 条");
+            if (catalog.EmbeddedCount < 10) { pass = false; detail.Append("；内嵌条目不足 10"); }
+            if (hookEntries < 5) { pass = false; detail.Append("；hook/mixed 条目不足 5"); }
+
+            var suspects = catalog.BuildSuspects(occupancy);
+            int withCombo = 0, confirmed = 0, reference = 0;
+            foreach (HookSuspect r in suspects)
+            {
+                if (r.Combo != null) withCombo++;
+                if (r.Evidence == HookEvidence.Confirmed) confirmed++;
+                if (r.Evidence == HookEvidence.ReferenceOnly) reference++;
+            }
+            detail.Append("；嫌疑记录 ").Append(suspects.Count).Append(" 条（带组合键 ").Append(withCombo)
+                  .Append("，已确认 ").Append(confirmed).Append("，仅供参考 ").Append(reference).Append("）");
+            if (withCombo == 0) { pass = false; detail.Append("；没有任何带组合键的嫌疑"); }
+            if (reference == 0) { pass = false; detail.Append("；没有任何「仅供参考」条目"); }
+
+            // 黑名单：无论界面/命令行都不能放宽
+            if (AutoProbe.ForbiddenReason(KeyCombo.Parse("Win+D")) == null) { pass = false; detail.Append("；Win+D 未被拦截"); }
+            if (AutoProbe.ForbiddenReason(KeyCombo.Parse("Alt+F4")) == null) { pass = false; detail.Append("；Alt+F4 未被拦截"); }
+            if (AutoProbe.ForbiddenReason(KeyCombo.Parse("Ctrl+Alt+Tab")) == null) { pass = false; detail.Append("；Ctrl+Alt+Tab 未被拦截"); }
+            if (AutoProbe.ForbiddenReason(KeyCombo.Parse("Ctrl+Alt+M")) != null) { pass = false; detail.Append("；Ctrl+Alt+M 被误拦截"); }
+
+            if (occupancy != null)
+            {
+                AutoProbeResult dry = AutoProbe.DryRun(occupancy, 5, null);
+                detail.Append("；dry-run 计划 ").Append(dry.PlannedCount).Append(" 个、记录 ")
+                      .Append(dry.Records.Count).Append(" 条");
+                if (!dry.DryRun || dry.PlannedCount < 1 || dry.PlannedCount > 5) pass = false;
+                if (dry.CountOf(AutoProbeOutcome.Attributed) != 0 || dry.CountOf(AutoProbeOutcome.NoResponse) != 0)
+                {
+                    pass = false;
+                    detail.Append("；dry-run 竟然产出了已按下的结果");
+                }
+                SessionRecords.ClearAutoProbe();
+            }
+            else
+            {
+                pass = false;
+                detail.Append("；没有引擎 A 结果，无法验证自动归属计划");
+            }
+
+            Add("T8", "钩子知识库与自动归属策略", pass, detail.ToString());
         }
 
         // ---------------------------------------------------------------- T6

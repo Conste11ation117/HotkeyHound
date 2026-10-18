@@ -123,7 +123,66 @@ again, and compare the two results to pin down the culprit.
 
 ---
 
-## 5. Permissions and integrity
+## 5. Auto-attribution: asking who owns the occupied combinations
+
+Engine A tells you which combinations are occupied but not who owns them. Auto-attribution connects the
+two: it **simulates pressing** each occupied combination and uses engine B's attribution reports to ask
+for the owner.
+
+Command line (dry-run by default — it only prints what would be pressed, what is skipped and why, and
+**never presses anything**):
+
+```
+HotkeyHound.exe --attribute-all --dry-run
+HotkeyHound.exe --attribute-all --yes --report attribution.html --max 30
+```
+
+- Only `--yes` actually presses keys; without it the run is always dry-run.
+- The blacklist is **hard-coded and cannot be relaxed**: anything containing `Win`, plus `Alt+F4`,
+  `Alt+Tab`, `Alt+Esc`, `Alt+Space`, `Ctrl+Esc`, `Ctrl+Alt+Del`, `Ctrl+Shift+Esc`, `Ctrl+Alt+Tab`.
+  Those switch windows, close programs or open system UI.
+- At least 400 ms between key presses, 1.2 s of attribution wait, at most 30 combinations by default
+  (`--max`), and **Esc aborts immediately**.
+- Three outcomes: **Attributed** (owner identified), **No response** (pressed, but the owner did not
+  receive it within 1.2 s — very likely swallowed by a hook), **Skipped** (blacklist, over the limit,
+  aborted, input failure). Aborts, timeouts and skips are all counted honestly and written to the report.
+
+**Risk (read this first)**: simulated presses really trigger those hotkeys — they may start recording,
+open panels, switch the input method, pop up windows or even launch programs. The GUI button
+"Auto-attribute occupied combinations" shows a risk confirmation first and only then runs; progress is
+visible and you can press Esc or click Abort at any time. If unsure, start with `--dry-run`.
+
+---
+
+## 6. How to read hook suspects
+
+The sixth tab, "Hook suspects", and the `#hooksuspects` section of the report come from a read-only
+hook-hotkey catalog (embedded `data/hook-catalog.json` at build time; you can also put a file with the
+same name at `%LOCALAPPDATA%\HotkeyHound\catalog.json` to override or append entries). It does exactly
+three things: reads the software's config, checks whether the process is running, and compares against
+engine A's measurement.
+
+Read the evidence levels exactly as defined; the tool never turns a guess into a fact:
+
+| Level | Meaning |
+|---|---|
+| Confirmed | The config explicitly declares the combination and the software is running |
+| Highly suspected | Only one side of the evidence: declared in config but not running, or unreadable config while the process runs and is known to use hook hotkeys |
+| Known default | The software's factory-default shortcut; the local config could not be read |
+| Reference only | The software definitely uses hooks, but the exact keys cannot be determined |
+
+Usage: scan first; open the "Hook suspects" page, filter by evidence level; double-click a row or click
+"Open config folder" to jump to its configuration. Loading the page **installs no hook**.
+
+Important: **"not in the list" does not mean "no hook"**. The catalog only covers known software; to
+confirm whether a key is really swallowed, use engine C ("Hook detection" page). If the report's advice
+section says "Nothing happens when you press them? They are very likely swallowed by its hook", the
+combination was free in engine A while that software has a matching hook suspicion — change it in that
+software's settings.
+
+---
+
+## 7. Permissions and integrity
 
 - **Administrator (UAC)**: when not run as administrator, attribution for processes running as administrator
   (e.g. PowerToys) is invisible. The top banner and the "Scan overview" page both offer a "Relaunch as
@@ -139,7 +198,7 @@ again, and compare the two results to pin down the culprit.
 
 ---
 
-## 6. Known limitations
+## 8. Known limitations
 
 - **32-bit processes are invisible**: this program is 64-bit and the injected hook DLL is x64, so attribution
   for running 32-bit processes is not covered.
@@ -152,7 +211,7 @@ again, and compare the two results to pin down the culprit.
 
 ---
 
-## 7. Troubleshooting
+## 9. Troubleshooting
 
 **Q: The scan finds nothing / the numbers look too low?**
 A: Make sure another program is not registering a mass of hotkeys at the same time; re-run from an ordinary
@@ -175,7 +234,7 @@ window (restart the program for it to take effect).
 
 ---
 
-## 8. Uninstall / cleanup
+## 10. Uninstall / cleanup
 
 HotkeyHound is a portable single-file program with **no installer and no registry writes**:
 

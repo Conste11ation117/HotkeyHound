@@ -96,7 +96,50 @@ anything actually responds when pressed, use engine B and engine C.</p>
 <p>Tip: combine <code>--listen</code> with engine C's comparison workflow &mdash; record "now", exit one suspect
 software, test again, and compare.</p>
 
-<h2>5. Permissions and integrity</h2>
+<h2>5. Auto-attribution: asking who owns the occupied combinations</h2>
+<p>Engine A tells you which combinations are occupied but not who owns them. Auto-attribution connects the two:
+it <b>simulates pressing</b> each occupied combination and uses engine B's attribution reports to ask for the owner.</p>
+<pre><code>HotkeyHound.exe --attribute-all --dry-run
+HotkeyHound.exe --attribute-all --yes --report attribution.html --max 30</code></pre>
+<ul>
+  <li><b>Dry-run by default</b>: it only prints what would be pressed, what is skipped and why, and never presses
+      anything. Only <code>--yes</code> actually presses keys.</li>
+  <li><b>The blacklist is hard-coded and cannot be relaxed</b>: anything containing <code>Win</code>, plus
+      <code>Alt+F4</code>, <code>Alt+Tab</code>, <code>Alt+Esc</code>, <code>Alt+Space</code>, <code>Ctrl+Esc</code>,
+      <code>Ctrl+Alt+Del</code>, <code>Ctrl+Shift+Esc</code>, <code>Ctrl+Alt+Tab</code>. Those switch windows, close
+      programs or open system UI.</li>
+  <li>At least 400 ms between key presses, 1.2 s of attribution wait, at most 30 combinations by default
+      (<code>--max</code>), and <b>Esc aborts immediately</b>.</li>
+  <li>Three outcomes: <b>Attributed</b>, <b>No response</b> (pressed but the owner did not receive it — very likely
+      swallowed by a hook), <b>Skipped</b> (blacklist, over the limit, aborted, input failure). Aborts, timeouts and
+      skips are all counted honestly.</li>
+</ul>
+<p><b>Risk:</b> simulated presses really trigger those hotkeys — they may start recording, open panels, switch the
+input method, pop up windows or even launch programs. The GUI button shows a risk confirmation first and only then
+runs; progress is visible and Esc or Abort stops it at any time. If unsure, start with <code>--dry-run</code>.</p>
+
+<h2>6. How to read hook suspects</h2>
+<p>The sixth tab, "Hook suspects", and the <code>#hooksuspects</code> section of the report come from a read-only
+hook-hotkey catalog (embedded <code>data/hook-catalog.json</code> at build time; you can also put a file with the
+same name at <code>%LOCALAPPDATA%\HotkeyHound\catalog.json</code> to override or append entries). It does exactly
+three things: reads the software's config, checks whether the process is running, and compares against engine A's
+measurement.</p>
+<table>
+  <tr><th>Evidence level</th><th>Meaning</th></tr>
+  <tr><td>Confirmed</td><td>The config explicitly declares the combination and the software is running</td></tr>
+  <tr><td>Highly suspected</td><td>Only one side of the evidence: declared in config but not running, or unreadable
+      config while the process runs and is known to use hook hotkeys</td></tr>
+  <tr><td>Known default</td><td>The software's factory-default shortcut; the local config could not be read</td></tr>
+  <tr><td>Reference only</td><td>The software definitely uses hooks, but the exact keys cannot be determined</td></tr>
+</table>
+<p>Usage: scan first; open the "Hook suspects" page, filter by evidence level; double-click a row or click
+"Open config folder" to jump to its configuration. Loading the page <b>installs no hook</b>.</p>
+<p><b>"Not in the list" does not mean "no hook".</b> The catalog only covers known software; to confirm whether a
+key is really swallowed, use engine C ("Hook detection" page). If the report's advice says "Nothing happens when you
+press them? They are very likely swallowed by its hook", the combination was free in engine A while that software
+has a matching hook suspicion — change it in that software's settings.</p>
+
+<h2>7. Permissions and integrity</h2>
 <ul>
   <li><b>Administrator (UAC)</b>: when not elevated, attribution for processes running as administrator is
       invisible. The top banner and the Scan overview page both offer "Relaunch as administrator"; from the command
@@ -110,7 +153,7 @@ software, test again, and compare.</p>
       This is a Windows security mechanism, not a bug in this tool.</li>
 </ul>
 
-<h2>6. Known limitations</h2>
+<h2>8. Known limitations</h2>
 <ul>
   <li><b>32-bit processes are invisible</b>: this program is 64-bit and the hook DLL is x64.</li>
   <li><b>Hook-based hotkeys do not go through WM_HOTKEY</b>: they neither appear in engine A nor trigger engine B.</li>
@@ -119,7 +162,7 @@ software, test again, and compare.</p>
   <li><b>Engines B/C install hooks</b>: by design, and only on explicit action.</li>
 </ul>
 
-<h2>7. Troubleshooting</h2>
+<h2>9. Troubleshooting</h2>
 <ul>
   <li><b>Scan finds nothing / numbers too low?</b> Ensure no other program registers a mass of hotkeys; re-run
       from an ordinary directory.</li>
@@ -132,7 +175,7 @@ software, test again, and compare.</p>
       window / on the Report &amp; about page (restart to take effect).</li>
 </ul>
 
-<h2>8. Uninstall / cleanup</h2>
+<h2>10. Uninstall / cleanup</h2>
 <ul>
   <li>Portable single file: just delete <code>HotkeyHound.exe</code> &mdash; no installer, no registry writes.</li>
   <li>The program extracts engine B's native DLL (<code>HotkeyHound.Hook.dll</code>) and <code>settings.ini</code>

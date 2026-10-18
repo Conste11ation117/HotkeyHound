@@ -4,6 +4,63 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-10-17 Tracker
+
+### Added: auto-attribution (engines A x B)
+
+Engine A can say *which* combinations are occupied but not *who* owns them; engine B can name the owner but
+only after the user presses the key. This release connects the two: `--attribute-all` runs engine A, then
+simulates pressing each occupied combination and uses engine B's attribution reports to identify the owner.
+Results fall into three classes: **Attributed**, **No response** (pressed, but the owner never received it —
+very likely swallowed by a hook), and **Skipped** (blacklist, timeout, abort). That last class is precisely
+where this tool goes beyond Hotkey Screener's "Detect application": a commercial tool only answers "who
+responded", while "nothing responded" is itself the most valuable clue.
+
+The other half of the release is the safety boundary: **dry-run by default** — without `--yes` it only prints
+the plan and presses nothing; the GUI button goes through an explicit risk confirmation; anything containing
+`Win`, plus `Alt+F4`, `Alt+Tab`, `Alt+Esc`, `Alt+Space`, `Ctrl+Esc`, `Ctrl+Alt+Del`, `Ctrl+Shift+Esc`,
+`Ctrl+Alt+Tab`, `Alt+Shift+Tab` and the GPU driver's display-rotation keys (`Ctrl+Alt+arrows`) is a
+hard-coded exclusion that cannot be relaxed; key presses are at least 400 ms apart, the
+attribution wait is 1.2 s, Esc aborts immediately, and aborts and skips are counted honestly in the report.
+
+### Added: hook-hotkey catalog (sixth tab, "Hook suspects")
+
+A read-only catalog at `data/hook-catalog.json` (embedded at build time, overridable/appended via
+`%LOCALAPPDATA%\HotkeyHound\catalog.json`). For every known software it reads the config, checks whether
+the process is running, and compares against engine A's measurement, producing hook suspects with an
+**evidence level** (Confirmed / Highly suspected / Known default / Reference only). Configs that engine D
+can already parse (PowerToys Keyboard Manager, Peek) reuse those adapters instead of a second parser.
+
+### Why not a kernel driver
+
+Hook-based hotkeys (Keyboard Manager, IMEs, AutoHotkey, vendor macros) never call `RegisterHotKey`; their
+keys are handled by low-level hooks or drivers before reaching system dispatch. A kernel driver can read
+win32k's hotkey table, **but it cannot read hooks** — so the driver approach does not solve the very class
+of problem this tool exists for. The cost is very real: unsigned drivers, Secure Boot / HVCI blocking,
+antivirus and anti-cheat false positives, all for troubleshooting a shortcut. So this release deliberately
+takes the other road:
+
+> read its config + check whether it runs + compare against measured occupancy → produce *highly suspected*
+> conclusions and tell the user where to change them.
+
+The evidence levels make that road's limits visible: only "Confirmed" means the config explicitly declares
+the key and the process runs; every other level carries uncertainty. The tool would rather print
+"reference only" than present a guess as a fact.
+
+### Documentation and UI
+
+- Sixth tab, "Hook suspects": combination / software / module / evidence level / process running / config
+  readable / explanation / source path, with an evidence filter and "Open config folder"; loading the page
+  installs **no** hook.
+- The report gains `#hooksuspects` (grouped by evidence level) and `#autoprobe` (three-class counts plus one
+  row per result). Both sections are emitted even with no data, with instructions on how to collect it.
+  Advice now says "Nothing happens when you press them? They are very likely swallowed by its hook — change
+  it in that software's settings" when a Confirmed/Highly-suspected suspect hits a combination that engine A
+  measured as free.
+- Help documents (zh/en, Markdown and HTML) gain sections on auto-attribution risk/usage and on reading hook
+  suspects.
+- Self-test gains T8: catalog loading, evidence-level output, and the blacklist/dry-run semantics.
+
 ## [1.0.0] — 2026-10-16 Watchtower
 
 First public release. Everything below was built and verified on a single day, including the

@@ -82,6 +82,10 @@ $helpEn = Join-Path $root 'docs\help.en-US.html'
 if (-not (Test-Path $helpZh)) { throw "找不到帮助文档：$helpZh" }
 if (-not (Test-Path $helpEn)) { throw "找不到帮助文档：$helpEn" }
 
+# 钩子型热键知识库（构建时内嵌；用户可在 %LOCALAPPDATA%\HotkeyHound\catalog.json 覆盖/追加）。
+$catalog = Join-Path $root 'data\hook-catalog.json'
+if (-not (Test-Path $catalog)) { throw "找不到钩子知识库：$catalog" }
+
 $refs = @(
   'mscorlib.dll', 'System.dll', 'System.Core.dll',
   'System.Drawing.dll', 'System.Windows.Forms.dll', 'System.Xml.dll'
@@ -101,7 +105,8 @@ $cscArgs = @(
   "-win32manifest:$manifest",
   "-resource:$hookDll,HotkeyHound.Hook.dll",
   "-resource:$helpZh,help.zh-CN.html",
-  "-resource:$helpEn,help.en-US.html"
+  "-resource:$helpEn,help.en-US.html",
+  "-resource:$catalog,hook-catalog.json"
 ) + $refs + $sources
 
 Write-Host '正在编译 HotkeyHound.exe（csc.exe, .NET Framework 4.8, C# 7.3）...' -ForegroundColor Cyan
