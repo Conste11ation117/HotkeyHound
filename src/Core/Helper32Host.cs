@@ -370,7 +370,7 @@ namespace HotkeyHound.Core
                 }
                 if (started == null)
                 {
-                    return Fail(L10n.F("helper32.log.startFailed", "Process.Start 返回 null"));
+                    return Fail(L10n.F("helper32.log.startFailed", L10n.T("helper32.processStartNull")));
                 }
 
                 int pid = 0;

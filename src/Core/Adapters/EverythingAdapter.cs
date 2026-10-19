@@ -15,9 +15,9 @@ namespace HotkeyHound.Core.Adapters
 
         private static readonly Dictionary<string, string> Purposes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            { "new_window_key", "打开新搜索窗口" },
-            { "show_window_key", "显示主窗口" },
-            { "toggle_window_key", "显示/隐藏主窗口" }
+            { "new_window_key", "adapter.everything.newWindow" },
+            { "show_window_key", "adapter.everything.showWindow" },
+            { "toggle_window_key", "adapter.everything.toggleWindow" }
         };
 
         public override IEnumerable<DeclaredHotkey> Collect()
@@ -31,7 +31,7 @@ namespace HotkeyHound.Core.Adapters
             string file = Path.Combine(AdapterUtil.RoamingAppData, "Everything", "Everything.ini");
             if (!File.Exists(file))
             {
-                Note("未找到配置文件：" + file);
+                Note(L10n.F("adapter.everything.notFound", file));
                 return list;
             }
 
@@ -46,15 +46,15 @@ namespace HotkeyHound.Core.Adapters
                 var combo = ParseEverythingValue(raw);
                 if (combo == null)
                 {
-                    Warn("无法解析 " + key + " = " + raw);
+                    Warn(L10n.F("adapter.everything.parseFailed", key, raw));
                     continue;
                 }
-                string purpose;
-                if (!Purposes.TryGetValue(key, out purpose)) purpose = key;
-                list.Add(Make(Software, "全局热键", purpose, combo, raw, file, false));
+                string purposeKey;
+                string purpose = Purposes.TryGetValue(key, out purposeKey) ? L10n.T(purposeKey) : key;
+                list.Add(Make(Software, L10n.T("adapter.common.globalHotkey"), purpose, combo, raw, file, false));
             }
 
-            Note("解析出 " + list.Count + " 条热键");
+            Note(L10n.F("adapter.everything.parsed", list.Count));
             return list;
         }
 

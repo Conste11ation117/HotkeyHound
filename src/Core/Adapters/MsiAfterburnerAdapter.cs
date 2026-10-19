@@ -12,20 +12,20 @@ namespace HotkeyHound.Core.Adapters
 
         private static readonly Dictionary<string, string> Purposes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            { "OSDToggleHotkey", "切换屏幕显示" },
-            { "OSDOnHotkey", "开启屏幕显示" },
-            { "OSDOffHotkey", "关闭屏幕显示" },
-            { "OSDServerBlockHotkey", "屏蔽屏幕显示服务" },
-            { "LimiterToggleHotkey", "切换帧率限制" },
-            { "LimiterOnHotkey", "开启帧率限制" },
-            { "LimiterOffHotkey", "关闭帧率限制" },
-            { "ScreenCaptureHotkey", "截图" },
-            { "VideoCaptureHotkey", "视频录制" },
-            { "VideoPrerecordHotkey", "预先录制" },
-            { "PTTHotkey", "按键通话" },
-            { "PTT2Hotkey", "按键通话 2" },
-            { "BeginRecordHotkey", "开始录制" },
-            { "EndRecordHotkey", "结束录制" }
+            { "OSDToggleHotkey", "adapter.msi.osdToggle" },
+            { "OSDOnHotkey", "adapter.msi.osdOn" },
+            { "OSDOffHotkey", "adapter.msi.osdOff" },
+            { "OSDServerBlockHotkey", "adapter.msi.osdServerBlock" },
+            { "LimiterToggleHotkey", "adapter.msi.limiterToggle" },
+            { "LimiterOnHotkey", "adapter.msi.limiterOn" },
+            { "LimiterOffHotkey", "adapter.msi.limiterOff" },
+            { "ScreenCaptureHotkey", "adapter.msi.screenshot" },
+            { "VideoCaptureHotkey", "adapter.msi.videoCapture" },
+            { "VideoPrerecordHotkey", "adapter.msi.prerecord" },
+            { "PTTHotkey", "adapter.msi.ptt" },
+            { "PTT2Hotkey", "adapter.msi.ptt2" },
+            { "BeginRecordHotkey", "adapter.msi.beginRecord" },
+            { "EndRecordHotkey", "adapter.msi.endRecord" }
         };
 
         public override IEnumerable<DeclaredHotkey> Collect()
@@ -39,7 +39,7 @@ namespace HotkeyHound.Core.Adapters
             string file = @"C:\Program Files (x86)\MSI Afterburner\Profiles\MSIAfterburner.cfg";
             if (!File.Exists(file))
             {
-                Note("未找到配置文件：" + file);
+                Note(L10n.F("adapter.msi.notFound", file));
                 return list;
             }
 
@@ -60,21 +60,21 @@ namespace HotkeyHound.Core.Adapters
                 var combo = Decode(value);
                 if (combo == null)
                 {
-                    Warn("无法解析热键编码 " + name + "=" + raw);
+                    Warn(L10n.F("adapter.msi.badEncoding", name, raw));
                     continue;
                 }
 
-                string purpose;
-                if (!Purposes.TryGetValue(name, out purpose)) purpose = name;
+                string purposeKey;
+                string purpose = Purposes.TryGetValue(name, out purposeKey) ? L10n.T(purposeKey) : name;
                 if (name.StartsWith("Profile", StringComparison.OrdinalIgnoreCase) && name.EndsWith("Hotkey", StringComparison.OrdinalIgnoreCase))
                 {
-                    purpose = "切换到超频配置 " + name.Substring(7, name.Length - 7 - 6);
+                    purpose = L10n.F("adapter.msi.profile", name.Substring(7, name.Length - 7 - 6));
                 }
 
                 list.Add(Make(Software, "Profiles\\MSIAfterburner.cfg", purpose, combo, name + "=" + raw, file, false));
             }
 
-            Note("解析出 " + list.Count + " 条热键（本机若全为未设置则为 0）");
+            Note(L10n.F("adapter.msi.parsed", list.Count));
             return list;
         }
 

@@ -11,24 +11,24 @@ namespace HotkeyHound.Core.Adapters
 
         private static readonly Dictionary<string, string> Purposes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            { "OBSBasic.StartStreaming", "开始推流" },
-            { "OBSBasic.StopStreaming", "停止推流" },
-            { "OBSBasic.StartRecording", "开始录制" },
-            { "OBSBasic.StopRecording", "停止录制" },
-            { "OBSBasic.ToggleRecording", "切换录制" },
-            { "OBSBasic.ToggleStreaming", "切换推流" },
-            { "OBSBasic.StartReplayBuffer", "开启回放缓存" },
-            { "OBSBasic.StopReplayBuffer", "关闭回放缓存" },
-            { "OBSBasic.SaveReplayBuffer", "保存回放" },
-            { "OBSBasic.PauseRecording", "暂停录制" },
-            { "OBSBasic.ResumeRecording", "继续录制" },
-            { "OBSBasic.StartVirtualCam", "开启虚拟摄像头" },
-            { "OBSBasic.StopVirtualCam", "关闭虚拟摄像头" },
-            { "OBSBasic.Screenshot", "截图" },
-            { "OBSBasic.PushToTalk", "按键通话" },
-            { "OBSBasic.PushToMute", "按键静音" },
-            { "OBSBasic.TogglePreview", "切换预览" },
-            { "OBSBasic.StartReplayBuffer", "开始回放缓存" }
+            { "OBSBasic.StartStreaming", "adapter.obs.startStreaming" },
+            { "OBSBasic.StopStreaming", "adapter.obs.stopStreaming" },
+            { "OBSBasic.StartRecording", "adapter.obs.startRecording" },
+            { "OBSBasic.StopRecording", "adapter.obs.stopRecording" },
+            { "OBSBasic.ToggleRecording", "adapter.obs.toggleRecording" },
+            { "OBSBasic.ToggleStreaming", "adapter.obs.toggleStreaming" },
+            { "OBSBasic.StartReplayBuffer", "adapter.obs.startReplayBuffer" },
+            { "OBSBasic.StopReplayBuffer", "adapter.obs.stopReplayBuffer" },
+            { "OBSBasic.SaveReplayBuffer", "adapter.obs.saveReplay" },
+            { "OBSBasic.PauseRecording", "adapter.obs.pauseRecording" },
+            { "OBSBasic.ResumeRecording", "adapter.obs.resumeRecording" },
+            { "OBSBasic.StartVirtualCam", "adapter.obs.startVirtualCam" },
+            { "OBSBasic.StopVirtualCam", "adapter.obs.stopVirtualCam" },
+            { "OBSBasic.Screenshot", "adapter.obs.screenshot" },
+            { "OBSBasic.PushToTalk", "adapter.obs.pushToTalk" },
+            { "OBSBasic.PushToMute", "adapter.obs.pushToMute" },
+            { "OBSBasic.TogglePreview", "adapter.obs.togglePreview" },
+            { "OBSBasic.StartReplayBuffer", "adapter.obs.startReplayBuffer2" }
         };
 
         public override IEnumerable<DeclaredHotkey> Collect()
@@ -42,12 +42,12 @@ namespace HotkeyHound.Core.Adapters
             string root = Path.Combine(AdapterUtil.RoamingAppData, "obs-studio");
             if (!Directory.Exists(root))
             {
-                Note("未找到 OBS 配置目录：" + root);
+                Note(L10n.F("adapter.obs.notFound", root));
                 return list;
             }
 
             string global = Path.Combine(root, "global.ini");
-            if (File.Exists(global)) ReadHotkeys(global, "全局", list);
+            if (File.Exists(global)) ReadHotkeys(global, L10n.T("adapter.obs.globalModule"), list);
 
             string profiles = Path.Combine(root, "basic", "profiles");
             if (Directory.Exists(profiles))
@@ -55,11 +55,11 @@ namespace HotkeyHound.Core.Adapters
                 foreach (string dir in Directory.GetDirectories(profiles))
                 {
                     string ini = Path.Combine(dir, "basic.ini");
-                    if (File.Exists(ini)) ReadHotkeys(ini, "配置集 " + Path.GetFileName(dir), list);
+                    if (File.Exists(ini)) ReadHotkeys(ini, L10n.F("adapter.obs.profileSet", Path.GetFileName(dir)), list);
                 }
             }
 
-            Note("解析出 " + list.Count + " 条热键");
+            Note(L10n.F("adapter.obs.parsed", list.Count));
             return list;
         }
 
@@ -75,15 +75,20 @@ namespace HotkeyHound.Core.Adapters
                 var combo = KeyCombo.Parse(raw);
                 if (combo == null)
                 {
-                    Warn("无法解析 " + kv.Key + " = " + raw + "（" + file + "）");
+                    Warn(L10n.F("adapter.obs.badValue", kv.Key, raw, file));
                     continue;
                 }
 
+                string purposeKey;
                 string purpose;
-                if (!Purposes.TryGetValue(kv.Key, out purpose))
+                if (!Purposes.TryGetValue(kv.Key, out purposeKey))
                 {
                     purpose = kv.Key.StartsWith("OBSBasic.", StringComparison.OrdinalIgnoreCase)
                         ? kv.Key.Substring(9) : kv.Key;
+                }
+                else
+                {
+                    purpose = L10n.T(purposeKey);
                 }
                 outList.Add(Make(Software, module, purpose, combo, kv.Key + "=" + raw, file, false));
             }

@@ -14,30 +14,30 @@ namespace HotkeyHound.Core.Adapters
 
         private static readonly Dictionary<string, string> Purposes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            { "GFEOverlayHKeyV2", "叠加层开关" },
-            { "ScreenshotHKey", "截图" },
-            { "ManualHKey", "手动录制" },
-            { "DVRHKey", "即时回放开关" },
-            { "IRToggleHKey", "即时回放开关" },
-            { "FSToggleHKey", "即时回放开关" },
-            { "FSPresetHKey", "即时回放预设" },
-            { "FSPresetStyle1HKey", "即时回放预设样式 1" },
-            { "FSPresetStyle2HKey", "即时回放预设样式 2" },
-            { "FSPresetStyle3HKey", "即时回放预设样式 3" },
-            { "FSUIHKeyV1", "即时回放界面" },
-            { "AnselUIHKey", "Ansel 拍照界面" },
-            { "PMOCOverlayHKey", "性能监控叠加层" },
-            { "PMOCOverlayCycleHKey", "性能监控指标切换" },
-            { "PMOCResetAverageMetricsHKey", "重置性能监控平均值" },
-            { "PMOCLoggingToggleHKey", "性能监控日志开关" },
-            { "PMOCFontSizeCycleHKey", "性能监控字体切换" },
-            { "MicToggleHKey", "麦克风开关" },
-            { "MicPTTHKey", "麦克风按键通话" },
-            { "ChatUIToggleHKey", "聊天界面开关" },
-            { "ChatPTTHKey", "聊天按键通话" },
-            { "NativeKeyboardInputDialogHKey", "键盘输入对话框" },
-            { "CustomOverlayBHKey", "自定义叠加层 B" },
-            { "CustomOverlayCHKey", "自定义叠加层 C" }
+            { "GFEOverlayHKeyV2", "adapter.nvidia.overlayToggle" },
+            { "ScreenshotHKey", "adapter.nvidia.screenshot" },
+            { "ManualHKey", "adapter.nvidia.manualRecord" },
+            { "DVRHKey", "adapter.nvidia.replayToggle" },
+            { "IRToggleHKey", "adapter.nvidia.replayToggle" },
+            { "FSToggleHKey", "adapter.nvidia.replayToggle" },
+            { "FSPresetHKey", "adapter.nvidia.replayPreset" },
+            { "FSPresetStyle1HKey", "adapter.nvidia.replayStyle1" },
+            { "FSPresetStyle2HKey", "adapter.nvidia.replayStyle2" },
+            { "FSPresetStyle3HKey", "adapter.nvidia.replayStyle3" },
+            { "FSUIHKeyV1", "adapter.nvidia.replayUi" },
+            { "AnselUIHKey", "adapter.nvidia.anselUi" },
+            { "PMOCOverlayHKey", "adapter.nvidia.perfOverlay" },
+            { "PMOCOverlayCycleHKey", "adapter.nvidia.perfCycle" },
+            { "PMOCResetAverageMetricsHKey", "adapter.nvidia.perfResetAverage" },
+            { "PMOCLoggingToggleHKey", "adapter.nvidia.perfLogging" },
+            { "PMOCFontSizeCycleHKey", "adapter.nvidia.perfFont" },
+            { "MicToggleHKey", "adapter.nvidia.micToggle" },
+            { "MicPTTHKey", "adapter.nvidia.micPtt" },
+            { "ChatUIToggleHKey", "adapter.nvidia.chatToggle" },
+            { "ChatPTTHKey", "adapter.nvidia.chatPtt" },
+            { "NativeKeyboardInputDialogHKey", "adapter.nvidia.keyboardDialog" },
+            { "CustomOverlayBHKey", "adapter.nvidia.overlayB" },
+            { "CustomOverlayCHKey", "adapter.nvidia.overlayC" }
         };
 
         public override IEnumerable<DeclaredHotkey> Collect()
@@ -54,7 +54,7 @@ namespace HotkeyHound.Core.Adapters
             {
                 if (key == null)
                 {
-                    Note("注册表项不存在（未安装或从未配置）：" + source);
+                    Note(L10n.F("adapter.nvidia.keyMissing", source));
                     return list;
                 }
 
@@ -100,11 +100,13 @@ namespace HotkeyHound.Core.Adapters
                     var combo = ComposeFromVks(members);
                     if (combo == null)
                     {
-                        Warn("无法组合出有效热键：" + baseName);
+                        Warn(L10n.F("adapter.nvidia.badCombo", baseName));
                         continue;
                     }
+                    string purposeKey;
                     string purpose;
-                    if (!Purposes.TryGetValue(baseName, out purpose)) purpose = baseName;
+                    if (!Purposes.TryGetValue(baseName, out purposeKey)) purpose = baseName;
+                    else purpose = L10n.T(purposeKey);
                     string raw = baseName + "Count=" + kv.Value;
                     list.Add(Make(Software, "ShadowPlay", purpose, combo, raw, sourcePath, false));
                     emitted.Add(baseName);
@@ -118,13 +120,15 @@ namespace HotkeyHound.Core.Adapters
                     if (s == null || s.IndexOf(';') < 0) continue;
                     var combo = KeyCombo.FromVkList(s);
                     if (combo == null) continue;
+                    string purposeKey;
                     string purpose;
-                    if (!Purposes.TryGetValue(name, out purpose)) purpose = name;
+                    if (!Purposes.TryGetValue(name, out purposeKey)) purpose = name;
+                    else purpose = L10n.T(purposeKey);
                     list.Add(Make(Software, "ShadowPlay", purpose, combo, s, source + "\\" + name, false));
                 }
             }
 
-            Note("解析出 " + list.Count + " 条热键");
+            Note(L10n.F("adapter.nvidia.parsed", list.Count));
             return list;
         }
 

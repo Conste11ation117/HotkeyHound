@@ -22,12 +22,12 @@ namespace HotkeyHound.Core.Adapters
             if (configPath != null)
             {
                 var json = JsonLite.TryParseFile(configPath);
-                if (json == null) Warn("配置解析失败：" + configPath);
-                else Walk(json, "配置", configPath, list);
+                if (json == null) Warn(L10n.F("adapter.wallpaper.parseFailed", configPath));
+                else Walk(json, L10n.T("adapter.common.config"), configPath, list);
             }
             else
             {
-                Note("未找到 config.json（按设计静默跳过）");
+                Note(L10n.T("adapter.wallpaper.notFound"));
             }
 
             try
@@ -43,18 +43,19 @@ namespace HotkeyHound.Core.Adapters
                             if (string.IsNullOrEmpty(s)) continue;
                             var combo = KeyCombo.Parse(s);
                             if (combo == null) continue;
-                            list.Add(Make(Software, "注册表", "热键 " + name, combo, s,
-                                         "HKCU\\Software\\WallpaperEngine\\" + name, false));
+                            list.Add(Make(Software, L10n.T("adapter.common.registry"),
+                                          L10n.F("adapter.wallpaper.hotkey", name), combo, s,
+                                          "HKCU\\Software\\WallpaperEngine\\" + name, false));
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                Warn("注册表读取失败：" + ex.Message);
+                Warn(L10n.F("adapter.wallpaper.registryFailed", ex.Message));
             }
 
-            Note("解析出 " + list.Count + " 条热键");
+            Note(L10n.F("adapter.wallpaper.parsed", list.Count));
             return list;
         }
 
@@ -115,7 +116,8 @@ namespace HotkeyHound.Core.Adapters
                     var combo = ComboFromJson(kv.Value);
                     if (combo != null)
                     {
-                        outList.Add(Make(Software, module, "热键 " + kv.Key, combo, RawOf(kv.Value), source, false));
+                        outList.Add(Make(Software, module, L10n.F("adapter.wallpaper.hotkey", kv.Key), combo,
+                                         RawOf(kv.Value), source, false));
                     }
                 }
                 Walk(kv.Value, module, source, outList);

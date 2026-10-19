@@ -496,7 +496,7 @@ namespace HotkeyHound.Core
                         {
                             if (d == null || d.Combo == null) continue;
                             if (!string.Equals(d.Module, "Peek", StringComparison.OrdinalIgnoreCase)) continue;
-                            if (d.Purpose != null && d.Purpose.StartsWith("[已禁用]", StringComparison.Ordinal))
+                            if (L10n.IsDisabledPurpose(d.Purpose))
                             {
                                 disabled = true;
                                 continue;

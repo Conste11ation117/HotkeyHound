@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using HotkeyHound.Core.Adapters;
@@ -138,7 +138,9 @@ namespace HotkeyHound.Core
                     {
                         string extra = L10n.F("truth.note.shiftVariant", fuzzy[0].Combo.Display(),
                                               fuzzy[0].Software, fuzzy[0].Module);
-                        row.Note = string.IsNullOrEmpty(row.Note) ? extra : row.Note + "；" + extra;
+                        // 报告是拼接出来的：分隔符必须跟着语言走。以前这里写死全角「；」，
+                        // 英文报告的句子里就会漏出中文标点。
+                        row.Note = string.IsNullOrEmpty(row.Note) ? extra : row.Note + (L10n.IsEnglish ? "; " : "；") + extra;
                         row.FuzzyOnly = true;
                         if (row.Kind == TruthKind.FreeAndUndeclared && occ.Occupied == false)
                         {
@@ -197,9 +199,9 @@ namespace HotkeyHound.Core
             foreach (DeclaredHotkey d in decl)
             {
                 if (shown >= 4) { sb.Append(L10n.F("truth.note.moreDeclared", decl.Count)); break; }
-                if (shown > 0) sb.Append("；");
+                if (shown > 0) sb.Append(L10n.IsEnglish ? "; " : "；");
                 sb.Append(d.Software).Append('/').Append(L10n.Term(d.Module))
-                  .Append("（").Append(L10n.Term(d.Purpose)).Append("）");
+                  .Append(L10n.IsEnglish ? " (" : "（").Append(L10n.Term(d.Purpose)).Append(L10n.IsEnglish ? ")" : "）");
                 shown++;
             }
             return sb.ToString();
@@ -241,11 +243,11 @@ namespace HotkeyHound.Core
                             foreach (string c in candidates)
                             {
                                 if (shown >= 8) { sb.Append(L10n.F("truth.note.unowned.more", candidates.Count)); break; }
-                                if (shown > 0) sb.Append("、");
+                                if (shown > 0) sb.Append(L10n.IsEnglish ? ", " : "、");
                                 sb.Append(c);
                                 shown++;
                             }
-                            sb.Append("。");
+                            sb.Append(L10n.IsEnglish ? "." : "。");
                         }
                         return sb.ToString();
                     }

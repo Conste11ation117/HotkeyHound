@@ -133,7 +133,7 @@ namespace HotkeyHound.Core
             foreach (string note in HookDllLocator.Notes) Say(note);
             if (_dllPath == null)
             {
-                LastError = "hook DLL 释放失败：" + HookDllLocator.LastError;
+                LastError = L10n.F("attrib.dllReleaseFailed", HookDllLocator.LastError);
                 Say(LastError);
                 return false;
             }
@@ -155,7 +155,7 @@ namespace HotkeyHound.Core
             }
             if (!_ready)
             {
-                if (LastError == null) LastError = "钩子线程未能就绪（超时）";
+                if (LastError == null) LastError = L10n.T("attrib.threadTimeout");
                 Say(LastError);
                 try { _helper32.Stop(Say); }
                 catch (Exception) { }
@@ -179,7 +179,7 @@ namespace HotkeyHound.Core
             Thread t = _thread;
             if (t != null)
             {
-                try { if (!t.Join(4000)) Say("警告：钩子线程在 4 秒内没有退出"); }
+                try { if (!t.Join(4000)) Say(L10n.T("attrib.threadJoinTimeout")); }
                 catch (Exception) { }
             }
             _thread = null;
@@ -208,14 +208,14 @@ namespace HotkeyHound.Core
                     NativeMethods.PAGE_READWRITE, 0, (uint)ControlMapSize, MapName);
                 if (_mapHandle == IntPtr.Zero)
                 {
-                    LastError = "创建共享内存 " + MapName + " 失败，错误码 " + Marshal.GetLastWin32Error();
+                    LastError = L10n.F("attrib.mapCreateFailed", MapName, Marshal.GetLastWin32Error());
                     Say(LastError);
                     return;
                 }
                 _mapView = NativeMethods.MapViewOfFile(_mapHandle, NativeMethods.FILE_MAP_ALL_ACCESS, 0, 0, (uint)ControlMapSize);
                 if (_mapView == IntPtr.Zero)
                 {
-                    LastError = "映射共享内存失败，错误码 " + Marshal.GetLastWin32Error();
+                    LastError = L10n.F("attrib.mapViewFailed", Marshal.GetLastWin32Error());
                     Say(LastError);
                     return;
                 }
@@ -223,20 +223,20 @@ namespace HotkeyHound.Core
                 _hMod = NativeMethods.LoadLibraryW(_dllPath);
                 if (_hMod == IntPtr.Zero)
                 {
-                    LastError = "LoadLibrary 失败：" + _dllPath + "，错误码 " + Marshal.GetLastWin32Error();
+                    LastError = L10n.F("attrib.loadLibraryFailed", _dllPath, Marshal.GetLastWin32Error());
                     Say(LastError);
                     return;
                 }
                 IntPtr proc = NativeMethods.GetProcAddress(_hMod, "HotkeyHoundHookProc");
                 if (proc == IntPtr.Zero)
                 {
-                    LastError = "DLL 里找不到导出 HotkeyHoundHookProc";
+                    LastError = L10n.T("attrib.exportMissing");
                     Say(LastError);
                     return;
                 }
 
-                Say("LoadLibrary 成功：hMod=0x" + _hMod.ToInt64().ToString("X"));
-                Say("导出地址 HotkeyHoundHookProc=0x" + proc.ToInt64().ToString("X"));
+                Say(L10n.F("attrib.loadLibraryOk", _hMod.ToInt64().ToString("X")));
+                Say(L10n.F("attrib.exportAddress", proc.ToInt64().ToString("X")));
 
                 // 全局钩子必须使用原生 DLL 里的导出地址：托管委托的函数指针只在本进程
                 // 地址空间里有效，Windows 把 DLL 注入到别的进程后会去调用同一个地址，
@@ -244,16 +244,15 @@ namespace HotkeyHound.Core
                 _hook = NativeMethods.SetWindowsHookExPtr(WH_GETMESSAGE, proc, _hMod, 0);
                 if (_hook == IntPtr.Zero)
                 {
-                    LastError = "SetWindowsHookEx(WH_GETMESSAGE) 失败，错误码 " + Marshal.GetLastWin32Error();
+                    LastError = L10n.F("attrib.hookInstallFailed", Marshal.GetLastWin32Error());
                     Say(LastError);
                     if (ProcessIntegrity.IsBelowMedium)
                     {
-                        Say("提示：当前以" + ProcessIntegrity.Describe(ProcessIntegrity.Current)
-                            + "运行，UIPI 会阻止把 DLL 注入到普通进程。请把 exe 复制到普通目录后再运行。");
+                        Say(L10n.F("attrib.uipiHint", ProcessIntegrity.Describe(ProcessIntegrity.Current)));
                     }
                     return;
                 }
-                Say("SetWindowsHookEx 成功：hook=0x" + _hook.ToInt64().ToString("X") + "，控制窗口=0x" + _hwnd.ToInt64().ToString("X"));
+                Say(L10n.F("attrib.hookInstallOk", _hook.ToInt64().ToString("X"), _hwnd.ToInt64().ToString("X")));
 
                 // 写入共享内存，通知 DLL 可以上报。布局必须与位数无关：全是 4 字节字段。
                 // 写序必须与 HookDll.cpp 的读序（arm → magic → 句柄）配套：先写句柄与 magic，
@@ -265,8 +264,7 @@ namespace HotkeyHound.Core
                 Marshal.WriteInt32(_mapView, 0, unchecked((int)HKS_MAGIC));                           // magic
                 System.Threading.Thread.MemoryBarrier();
                 Marshal.WriteInt32(_mapView, 4, 1);                                                  // arm=1
-                Say("共享内存 " + MapName + " 已就绪（magic=0x484B5354, arm=1, ctl=0x"
-                    + _hwnd.ToInt64().ToString("X") + "）");
+                Say(L10n.F("attrib.mapReady", MapName, _hwnd.ToInt64().ToString("X")));
 
                 _ready = true;
 
@@ -277,7 +275,7 @@ namespace HotkeyHound.Core
                     if (r <= 0) break;
                     if (msg.message == WM_CLOSE)
                     {
-                        Say("收到 WM_CLOSE，钩子线程退出");
+                        Say(L10n.T("attrib.wmClose"));
                         break;
                     }
                     if (msg.message == WM_HOTKEY_REPORT)
@@ -291,7 +289,7 @@ namespace HotkeyHound.Core
             }
             catch (Exception ex)
             {
-                LastError = "钩子线程异常：" + ex;
+                LastError = L10n.F("attrib.threadException", ex);
                 Say(LastError);
             }
             finally
@@ -318,7 +316,7 @@ namespace HotkeyHound.Core
                     ushort atom = NativeMethods.RegisterClassExW(ref wc);
                     if (atom == 0)
                     {
-                        LastError = "RegisterClassEx 失败，错误码 " + Marshal.GetLastWin32Error();
+                        LastError = L10n.F("attrib.registerClassFailed", Marshal.GetLastWin32Error());
                         Say(LastError);
                         return false;
                     }
@@ -332,7 +330,7 @@ namespace HotkeyHound.Core
                                                   NativeMethods.GetModuleHandleW(null), IntPtr.Zero);
             if (_hwnd == IntPtr.Zero)
             {
-                LastError = "创建控制窗口失败，错误码 " + Marshal.GetLastWin32Error();
+                LastError = L10n.F("attrib.createWindowFailed", Marshal.GetLastWin32Error());
                 Say(LastError);
                 return false;
             }
@@ -345,8 +343,7 @@ namespace HotkeyHound.Core
                 if (!NativeMethods.ChangeWindowMessageFilterEx(
                         _hwnd, (uint)WM_HOTKEY_REPORT, NativeMethods.MSGFLT_ALLOW, IntPtr.Zero))
                 {
-                    Say("提示：放行归属上报消息失败（错误码 " + Marshal.GetLastWin32Error()
-                        + "）；以管理员身份运行时可能收不到来自普通权限进程的报告。");
+                    Say(L10n.F("attrib.msgFilterFailed", Marshal.GetLastWin32Error()));
                 }
             }
             catch (Exception) { }
@@ -398,9 +395,10 @@ namespace HotkeyHound.Core
             }
             if (justTruncated)
             {
-                Say("归属记录已超过 " + MaxRecords + " 条上限，开始丢弃最早的记录（界面与报告只保留最近的）。");
+                Say(L10n.F("attrib.truncated", MaxRecords));
             }
-            Say("归属报告：" + rec.Display() + (rec.ProcessPath == null ? "" : "  " + rec.ProcessPath));
+            Say(L10n.F("attrib.report", rec.Display(),
+                       rec.ProcessPath == null ? "" : "  " + rec.ProcessPath));
 
             Action<AttributionRecord> h = RecordReceived;
             if (h != null)
@@ -502,7 +500,7 @@ namespace HotkeyHound.Core
                 if (_hook != IntPtr.Zero)
                 {
                     NativeMethods.UnhookWindowsHookEx(_hook);
-                    Say("已 UnhookWindowsHookEx（旧句柄 0x" + _hook.ToInt64().ToString("X") + "）");
+                    Say(L10n.F("attrib.unhooked", _hook.ToInt64().ToString("X")));
                     _hook = IntPtr.Zero;
                 }
             }

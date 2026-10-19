@@ -61,8 +61,9 @@ namespace HotkeyHound.Core
                 }
                 catch (Exception ex)
                 {
-                    result.Log.Add("[警告][" + adapter.Software + "] 适配器崩溃（已忽略）：" + ex.Message);
-                    Say("[警告][" + adapter.Software + "] 适配器崩溃（已忽略）：" + ex.Message);
+                    string crashed = L10n.F("cfg.adapterCrashed", adapter.Software, ex.Message);
+                    result.Log.Add(crashed);
+                    Say(crashed);
                     continue;
                 }
 
@@ -77,7 +78,7 @@ namespace HotkeyHound.Core
                     result.Log.Add(line);
                     Say(line);
                 }
-                Say(string.Format("引擎 D：{0} 贡献 {1} 条声明", adapter.Software, result.Declared.Count - before));
+                Say(L10n.F("cfg.adapterContributed", adapter.Software, result.Declared.Count - before));
             }
 
             var reservedAdapter = new SystemReservedTable();
@@ -87,10 +88,9 @@ namespace HotkeyHound.Core
             }
             catch (Exception ex)
             {
-                result.Log.Add("[警告][系统保留表] 失败： " + ex.Message);
+                result.Log.Add(L10n.F("cfg.reservedFailed", ex.Message));
             }
-            Say(string.Format("引擎 D 完成：共 {0} 条声明，{1} 条系统保留提示",
-                              result.Declared.Count, result.Reserved.Count));
+            Say(L10n.F("cfg.done", result.Declared.Count, result.Reserved.Count));
             return result;
         }
     }

@@ -27,7 +27,7 @@ namespace HotkeyHound.Core.Adapters
             string root = Path.Combine(AdapterUtil.LocalAppData, "Microsoft", "PowerToys");
             if (!Directory.Exists(root))
             {
-                Note("未安装或未找到配置目录：" + root);
+                Note(L10n.F("adapter.ptmod.notFound", root));
                 return list;
             }
 
@@ -36,7 +36,8 @@ namespace HotkeyHound.Core.Adapters
 
             if (File.Exists(rootSettings))
             {
-                Walk(JsonLite.TryParseFile(rootSettings), "PowerToys 全局", rootSettings, "settings", list);
+                Walk(JsonLite.TryParseFile(rootSettings), L10n.T("adapter.ptmod.globalModule"), rootSettings,
+                     "settings", list);
             }
 
             string[] dirs = Directory.GetDirectories(root);
@@ -48,13 +49,13 @@ namespace HotkeyHound.Core.Adapters
                 var json = JsonLite.TryParseFile(file);
                 if (json == null)
                 {
-                    Warn("配置解析失败（已跳过）：" + file);
+                    Warn(L10n.F("adapter.ptmod.parseFailed", file));
                     continue;
                 }
                 Walk(json, Path.GetFileName(dir), file, "settings", list);
             }
 
-            Note("共解析出 " + list.Count + " 条热键声明");
+            Note(L10n.F("adapter.ptmod.parsed", list.Count));
             return list;
         }
 
@@ -120,14 +121,14 @@ namespace HotkeyHound.Core.Adapters
             string seenKey = module + "|" + combo.Normalize();
             if (!_seen.Add(seenKey)) return;
 
-            string purpose = string.IsNullOrEmpty(keyName) ? "热键" : keyName;
+            string purpose = string.IsNullOrEmpty(keyName) ? L10n.T("adapter.ptmod.hotkey") : keyName;
             bool moduleEnabled = true;
             if (module != null)
             {
                 bool on;
                 if (_enabled.TryGetValue(module, out on)) moduleEnabled = on;
             }
-            if (!moduleEnabled) purpose = "[已禁用] " + purpose;
+            if (!moduleEnabled) purpose = L10n.F("adapter.ptmod.disabled", purpose);
 
             outList.Add(Make(Software, module, purpose, combo, keyName == null ? code.ToString() : keyName,
                              source, false));

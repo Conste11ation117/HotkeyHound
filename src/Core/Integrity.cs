@@ -136,23 +136,23 @@ namespace HotkeyHound.Core
             IntPtr buf = IntPtr.Zero;
             try
             {
-                if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, out token)) return "(读取失败)";
+                if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, out token)) return L10n.T("il.sidReadFailed");
                 int size;
                 GetTokenInformation(token, TokenIntegrityLevel, IntPtr.Zero, 0, out size);
-                if (size <= 0) return "(读取失败)";
+                if (size <= 0) return L10n.T("il.sidReadFailed");
                 buf = Marshal.AllocHGlobal(size);
                 int ret;
-                if (!GetTokenInformation(token, TokenIntegrityLevel, buf, size, out ret)) return "(读取失败)";
+                if (!GetTokenInformation(token, TokenIntegrityLevel, buf, size, out ret)) return L10n.T("il.sidReadFailed");
                 IntPtr sid = Marshal.ReadIntPtr(buf);
                 IntPtr strPtr = IntPtr.Zero;
                 try
                 {
-                    if (!ConvertSidToStringSidW(sid, out strPtr)) return "(读取失败)";
+                    if (!ConvertSidToStringSidW(sid, out strPtr)) return L10n.T("il.sidReadFailed");
                     return Marshal.PtrToStringUni(strPtr);
                 }
                 finally { if (strPtr != IntPtr.Zero) LocalFree(strPtr); }
             }
-            catch (Exception) { return "(读取失败)"; }
+            catch (Exception) { return L10n.T("il.sidReadFailed"); }
             finally
             {
                 if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf);
@@ -254,7 +254,7 @@ namespace HotkeyHound.Core
             }
             catch (Exception ex)
             {
-                LastError = "读取内嵌资源失败：" + ex.Message;
+                LastError = L10n.F("il.embeddedReadFailed", ex.Message);
                 return null;
             }
         }
@@ -269,7 +269,7 @@ namespace HotkeyHound.Core
             byte[] bytes = EmbeddedBytes();
             if (bytes == null || bytes.Length == 0)
             {
-                if (LastError == null) LastError = "程序里没有内嵌 " + ResourceName + "（构建时原生 DLL 没编出来？）";
+                if (LastError == null) LastError = L10n.F("il.resourceMissing", ResourceName);
                 return null;
             }
 
@@ -306,16 +306,17 @@ namespace HotkeyHound.Core
                     File.Delete(probe);
 
                     _cachedPath = target;
-                    _notes.Add("hook DLL 释放到：" + target + "（" + bytes.Length + " 字节）");
+                    _notes.Add(L10n.F("il.dllExtracted", target, bytes.Length));
                     return target;
                 }
                 catch (Exception ex)
                 {
-                    _notes.Add("hook DLL 释放目录不可用，已跳过：" + dir + " → " + ex.GetType().Name + "：" + ex.Message);
+                    _notes.Add(L10n.F("il.dllDirSkipped", dir, ex.GetType().Name, ex.Message));
                 }
             }
 
-            LastError = "所有候选目录都写不进去。最后一次：" + (_notes.Count > 0 ? _notes[_notes.Count - 1] : "无候选目录");
+            LastError = L10n.F("il.noWritableDir",
+                               _notes.Count > 0 ? _notes[_notes.Count - 1] : L10n.T("il.noCandidate"));
             return null;
         }
 

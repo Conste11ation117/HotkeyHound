@@ -267,10 +267,10 @@ namespace HotkeyHound.Core
                 catch (Exception ex)
                 {
                     last = candidate + " → " + ex.GetType().Name + "：" + ex.Message;
-                    _notes.Add("临时目录不可写，已跳过：" + last);
+                    _notes.Add(L10n.F("shstate.tempDirSkipped", last));
                 }
             }
-            throw new IOException("找不到可写的临时目录。最后一次失败：" + last);
+            throw new IOException(L10n.F("shstate.noWritableTemp", last));
         }
 
         public static bool CanWriteIn(string directory)

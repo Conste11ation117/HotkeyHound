@@ -239,7 +239,7 @@ namespace HotkeyHound.Core
             while (!_ready && DateTime.Now < deadline && _thread.IsAlive) Thread.Sleep(20);
             if (!_ready)
             {
-                if (LastError == null) LastError = "低层键盘钩子线程未能就绪（超时）";
+                if (LastError == null) LastError = L10n.T("sniff.threadTimeout");
                 Say(LastError);
                 return false;
             }
@@ -265,7 +265,7 @@ namespace HotkeyHound.Core
             Thread t = _thread;
             if (t != null)
             {
-                try { if (!t.Join(4000)) Say("警告：钩子线程在 4 秒内没有退出"); }
+                try { if (!t.Join(4000)) Say(L10n.T("sniff.threadJoinTimeout")); }
                 catch (Exception) { }
             }
             _thread = null;
@@ -286,11 +286,11 @@ namespace HotkeyHound.Core
                 _hook = NativeMethods.SetWindowsHookExLL(WH_KEYBOARD_LL, _procKeepAlive, IntPtr.Zero, 0);
                 if (_hook == IntPtr.Zero)
                 {
-                    LastError = "SetWindowsHookEx(WH_KEYBOARD_LL) 失败，错误码 " + Marshal.GetLastWin32Error();
+                    LastError = L10n.F("sniff.installFailed", Marshal.GetLastWin32Error());
                     Say(LastError);
                     return;
                 }
-                Say("WH_KEYBOARD_LL 已安装：hook=0x" + _hook.ToInt64().ToString("X") + "，线程 " + _threadId);
+                Say(L10n.F("sniff.installed", _hook.ToInt64().ToString("X"), _threadId));
                 _ready = true;
 
                 NativeMethods.MSG msg;
@@ -304,7 +304,7 @@ namespace HotkeyHound.Core
             }
             catch (Exception ex)
             {
-                LastError = "钩子线程异常：" + ex;
+                LastError = L10n.F("sniff.threadException", ex);
                 Say(LastError);
             }
             finally
@@ -315,7 +315,7 @@ namespace HotkeyHound.Core
                     if (_hook != IntPtr.Zero)
                     {
                         NativeMethods.UnhookWindowsHookEx(_hook);
-                        Say("已 UnhookWindowsHookEx（WH_KEYBOARD_LL，句柄 0x" + _hook.ToInt64().ToString("X") + "）");
+                        Say(L10n.F("sniff.unhooked", _hook.ToInt64().ToString("X")));
                         _hook = IntPtr.Zero;
                     }
                 }
@@ -411,7 +411,7 @@ namespace HotkeyHound.Core
         {
             if (!IsRunning)
             {
-                LastError = "低层键盘钩子还没装好";
+                LastError = L10n.T("sniff.notReady");
                 return false;
             }
             if (combo == null) return false;

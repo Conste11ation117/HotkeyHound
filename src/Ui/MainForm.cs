@@ -67,21 +67,23 @@ namespace HotkeyHound.Ui
 
         private void OnScreenshotShown(object sender, EventArgs e)
         {
-            ScreenshotTrace(_screenshotDir, "窗口已显示，开始扫描");
+            ScreenshotTrace(_screenshotDir, L10n.T("ui.screenshot.windowShown"));
             StartScan(delegate (int done, int total) { }, delegate (ScanSnapshot snapshot, Exception error)
             {
-                ScreenshotTrace(_screenshotDir, "扫描结束：" + (error == null ? "成功" : error.ToString()));
+                ScreenshotTrace(_screenshotDir,
+                                L10n.F("ui.screenshot.scanDone",
+                                       error == null ? L10n.T("ui.screenshot.scanOk") : error.ToString()));
                 // 直接在 UI 线程上截：CapturePages 内部逐页 DoEvents，不再依赖 WinForms Timer
                 //（Timer 只被局部变量引用时可能在第一次 Tick 前就被回收）。
                 try
                 {
                     CapturePages(_screenshotDir);
-                    ScreenshotTrace(_screenshotDir, "截图完成");
+                    ScreenshotTrace(_screenshotDir, L10n.T("ui.screenshot.finished"));
                 }
                 catch (Exception ex)
                 {
-                    Log.Write("截图模式失败：" + ex.Message);
-                    ScreenshotTrace(_screenshotDir, "截图失败：" + ex);
+                    Log.Write(L10n.F("ui.screenshot.modeFailed", ex.Message));
+                    ScreenshotTrace(_screenshotDir, L10n.F("ui.screenshot.captureFailed", ex));
                 }
                 Close();
             });
@@ -90,8 +92,9 @@ namespace HotkeyHound.Ui
         private void CapturePages(string dir)
         {
             System.IO.Directory.CreateDirectory(dir);
-            ScreenshotTrace(dir, "标签页数：" + (_tabs == null ? -1 : _tabs.TabPages.Count)
-                + "，窗口尺寸：" + ClientSize.Width + "x" + ClientSize.Height);
+            ScreenshotTrace(dir, L10n.F("ui.screenshot.tabs",
+                                        _tabs == null ? -1 : _tabs.TabPages.Count,
+                                        ClientSize.Width, ClientSize.Height));
             string[] names = new string[]
             {
                 "01-overview", "02-attribution", "03-hookcheck", "04-keymonitor",
@@ -105,14 +108,14 @@ namespace HotkeyHound.Ui
                 Application.DoEvents();
                 int w = ClientSize.Width;
                 int h = ClientSize.Height;
-                ScreenshotTrace(dir, "渲染 " + names[i] + "（标签页 " + i + "，尺寸 " + w + "x" + h + "）");
+                ScreenshotTrace(dir, L10n.F("ui.screenshot.render", names[i], i, w, h));
                 if (w <= 0 || h <= 0) break;
                 using (var bmp = new Bitmap(w, h))
                 {
                     DrawToBitmap(bmp, new Rectangle(0, 0, w, h));
                     bmp.Save(System.IO.Path.Combine(dir, names[i] + ".png"), System.Drawing.Imaging.ImageFormat.Png);
                 }
-                Log.Write("已渲染 " + names[i] + ".png");
+                Log.Write(L10n.F("ui.screenshot.rendered", names[i]));
             }
         }
 

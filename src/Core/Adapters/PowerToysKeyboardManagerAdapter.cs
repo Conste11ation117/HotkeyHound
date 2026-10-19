@@ -29,28 +29,28 @@ namespace HotkeyHound.Core.Adapters
             string file = ConfigPath;
             if (!File.Exists(file))
             {
-                Note("未找到键盘管理器配置：" + file);
+                Note(L10n.F("adapter.ptkey.configNotFound", file));
                 return list;
             }
 
             var json = JsonLite.TryParseFile(file);
             if (json == null)
             {
-                Warn("配置解析失败：" + file);
+                Warn(L10n.F("adapter.ptkey.parseFailed", file));
                 return list;
             }
 
             JsonValue shortcuts;
             if (!json.TryGet("remapShortcuts", out shortcuts) || !shortcuts.IsObject)
             {
-                Note("配置里没有 remapShortcuts 段");
+                Note(L10n.T("adapter.ptkey.noRemapSection"));
                 return list;
             }
 
             JsonValue global;
             if (!shortcuts.TryGet("global", out global) || !global.IsArray)
             {
-                Note("配置里没有 remapShortcuts.global 数组");
+                Note(L10n.T("adapter.ptkey.noGlobalArray"));
                 return list;
             }
 
@@ -63,7 +63,7 @@ namespace HotkeyHound.Core.Adapters
                 var combo = KeyCombo.FromVkList(original);
                 if (combo == null)
                 {
-                    Warn("无法解析 originalKeys = " + original);
+                    Warn(L10n.F("adapter.ptkey.badOriginal", original));
                     continue;
                 }
 
@@ -72,19 +72,21 @@ namespace HotkeyHound.Core.Adapters
                 if (op == 1)
                 {
                     string exe = item["runProgramFilePath"] == null ? "" : item["runProgramFilePath"].AsString("");
-                    purpose = "运行 " + AdapterUtil.ExeName(AdapterUtil.Expand(exe));
+                    purpose = L10n.F("adapter.ptkey.run", AdapterUtil.ExeName(AdapterUtil.Expand(exe)));
                 }
                 else
                 {
                     string newKeys = item["newRemapKeys"] == null ? null : item["newRemapKeys"].AsString(null);
                     var target = KeyCombo.FromVkList(newKeys);
-                    purpose = "重映射 → " + (target != null ? target.Display() : (newKeys == null ? "(未知目标)" : newKeys));
+                    purpose = L10n.F("adapter.ptkey.remap",
+                                     target != null ? target.Display()
+                                                    : (newKeys == null ? L10n.T("adapter.ptkey.unknownTarget") : newKeys));
                 }
 
                 list.Add(Make(Software, "Keyboard Manager", purpose, combo, original, file, false));
             }
 
-            Note("解析出 " + list.Count + " 条全局重映射");
+            Note(L10n.F("adapter.ptkey.parsed", list.Count));
             return list;
         }
     }

@@ -26,7 +26,7 @@ namespace HotkeyHound.Core.Adapters
 
         protected void Warn(string message)
         {
-            _log.Add("[警告][" + Software + "] " + message);
+            _log.Add(L10n.T("adapter.warnPrefix") + "[" + Software + "] " + message);
         }
 
         public abstract IEnumerable<DeclaredHotkey> Collect();
@@ -40,7 +40,7 @@ namespace HotkeyHound.Core.Adapters
             }
             catch (Exception ex)
             {
-                adapter.Warn("采集失败（已忽略）：" + ex.GetType().Name + ": " + ex.Message);
+                adapter.Warn(L10n.F("adapter.collectFailed", ex.GetType().Name, ex.Message));
                 return new List<DeclaredHotkey>();
             }
         }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -103,7 +103,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
         private static void BuildHeader(StringBuilder sb, ScanSnapshot s)
         {
             sb.Append("<h1>").Append(Html.Escape(L10n.T("rep.h1"))).Append("</h1>\r\n");
-            string sep = "　|　";
+            string sep = L10n.T("rep.meta.sep");
             sb.Append("<div class=\"sub\">")
               .Append(Html.Escape(L10n.T("rep.meta.generated"))).Append(Html.Escape(s.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss"))).Append(sep)
               .Append(Html.Escape(L10n.T("rep.meta.machine"))).Append(Html.Escape(s.MachineName)).Append(sep)
@@ -330,7 +330,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
                 foreach (ComparisonSnapshot snap in comparisons)
                 {
                     sb.Append("<li><b>").Append(Html.Escape(snap.Time.ToString("HH:mm:ss")))
-                      .Append("　").Append(Html.Escape(snap.Label)).Append("</b>");
+                      .Append(L10n.IsEnglish ? " " : "　").Append(Html.Escape(snap.Label)).Append("</b>");
                     if (snap.Lines.Count > 0)
                     {
                         sb.Append("<ul>\r\n");
@@ -361,7 +361,9 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
               .Append("</div><div class=\"bd\"><ul>\r\n");
             foreach (HookEvidence ev in order)
             {
-                sb.Append("<li><b>").Append(Html.Escape(HookCatalog.EvidenceName(ev))).Append("</b>：")
+                // 标签后面这个冒号必须跟着语言走：英文报告里冒出全角冒号，看起来就是没做完的翻译。
+                sb.Append("<li><b>").Append(Html.Escape(HookCatalog.EvidenceName(ev)))
+                  .Append(L10n.IsEnglish ? "</b>: " : "</b>：")
                   .Append(Html.Escape(HookCatalog.EvidenceExplain(ev))).Append("</li>\r\n");
             }
             sb.Append("</ul></div></div>\r\n");
@@ -441,7 +443,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
 
             sb.Append("<p>").Append(Html.Escape(L10n.F("rep.autoprobe.mode",
                 result.DryRun ? L10n.T("auto.flag.dryRun") : L10n.T("auto.flag.real"))));
-            if (result.Aborted) sb.Append("　").Append(Html.Escape(L10n.T("auto.flag.aborted")));
+            if (result.Aborted) sb.Append(L10n.IsEnglish ? " " : "　").Append(Html.Escape(L10n.T("auto.flag.aborted")));
             sb.Append("</p>\r\n<div class=\"cards\">\r\n");
             Card(sb, result.CountOf(AutoProbeOutcome.Attributed), L10n.T("auto.outcome.attributed"));
             Card(sb, result.CountOf(AutoProbeOutcome.NoResponse), L10n.T("auto.outcome.noResponse"));
@@ -596,7 +598,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
                 {
                     if (samples[i].Combo.HasModifier && samples[i].Combo.Vk >= 0x70 && samples[i].Combo.Vk <= 0x87)
                     {
-                        if (taken > 0) sb2.Append("、");
+                                    if (taken > 0) sb2.Append(L10n.T("rep.list.sep"));
                         sb2.Append("<code>").Append(Html.Escape(samples[i].Combo.Display())).Append("</code>");
                         taken++;
                     }
@@ -658,7 +660,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
             int shown = rows.Count <= maxInline ? rows.Count : maxInline;
             for (int i = 0; i < shown; i++)
             {
-                if (i > 0) sb.Append("、");
+                if (i > 0) sb.Append(L10n.T("rep.list.sep"));
                 sb.Append("<code>").Append(Html.Escape(rows[i].Combo.Display())).Append("</code>");
             }
             if (rows.Count > maxInline) sb.Append(L10n.T("rep.list.more"));

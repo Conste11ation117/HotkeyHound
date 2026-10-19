@@ -123,7 +123,7 @@ namespace HotkeyHound.Core
 
         public static JsonValue Parse(string text)
         {
-            if (text == null) throw new JsonLiteException("输入为 null");
+            if (text == null) throw new JsonLiteException(L10n.T("json.nullInput"));
             int pos = 0;
             var v = ParseValue(text, ref pos, 0);
             SkipWs(text, ref pos);
@@ -165,9 +165,9 @@ namespace HotkeyHound.Core
 
         private static JsonValue ParseValue(string s, ref int i, int depth)
         {
-            if (depth > MaxDepth) throw new JsonLiteException("JSON 嵌套超过 " + MaxDepth + " 层，放弃解析");
+            if (depth > MaxDepth) throw new JsonLiteException(L10n.F("json.tooDeep", MaxDepth));
             SkipWs(s, ref i);
-            if (i >= s.Length) throw new JsonLiteException("JSON 意外结束");
+            if (i >= s.Length) throw new JsonLiteException(L10n.T("json.unexpectedEnd"));
             char c = s[i];
             switch (c)
             {
@@ -191,7 +191,7 @@ namespace HotkeyHound.Core
         private static void Expect(string s, ref int i, string word)
         {
             if (i + word.Length > s.Length || string.CompareOrdinal(s, i, word, 0, word.Length) != 0)
-                throw new JsonLiteException("位置 " + i + " 处期望 " + word);
+                throw new JsonLiteException(L10n.F("json.expected", i, word));
             i += word.Length;
         }
 
@@ -205,18 +205,18 @@ namespace HotkeyHound.Core
             while (true)
             {
                 SkipWs(s, ref i);
-                if (i >= s.Length || s[i] != '"') throw new JsonLiteException("位置 " + i + " 处期望对象成员名");
+                if (i >= s.Length || s[i] != '"') throw new JsonLiteException(L10n.F("json.expectedMember", i));
                 string key = ParseString(s, ref i);
                 SkipWs(s, ref i);
-                if (i >= s.Length || s[i] != ':') throw new JsonLiteException("位置 " + i + " 处期望 ':'");
+                if (i >= s.Length || s[i] != ':') throw new JsonLiteException(L10n.F("json.expectedColon", i));
                 i++;
                 JsonValue val = ParseValue(s, ref i, depth + 1);
                 o.AddMember(key, val);
                 SkipWs(s, ref i);
-                if (i >= s.Length) throw new JsonLiteException("对象未闭合");
+                if (i >= s.Length) throw new JsonLiteException(L10n.T("json.unclosedObject"));
                 if (s[i] == ',') { i++; continue; }
                 if (s[i] == '}') { i++; return o; }
-                throw new JsonLiteException("位置 " + i + " 处期望 ',' 或 '}'");
+                throw new JsonLiteException(L10n.F("json.expectedCommaOrBrace", i));
             }
         }
 
@@ -232,10 +232,10 @@ namespace HotkeyHound.Core
             {
                 a.Items.Add(ParseValue(s, ref i, depth + 1));
                 SkipWs(s, ref i);
-                if (i >= s.Length) throw new JsonLiteException("数组未闭合");
+                if (i >= s.Length) throw new JsonLiteException(L10n.T("json.unclosedArray"));
                 if (s[i] == ',') { i++; continue; }
                 if (s[i] == ']') { i++; return a; }
-                throw new JsonLiteException("位置 " + i + " 处期望 ',' 或 ']'");
+                throw new JsonLiteException(L10n.F("json.expectedCommaOrBracket", i));
             }
         }
 
@@ -245,11 +245,11 @@ namespace HotkeyHound.Core
             var sb = new StringBuilder();
             while (true)
             {
-                if (i >= s.Length) throw new JsonLiteException("字符串未闭合");
+                if (i >= s.Length) throw new JsonLiteException(L10n.T("json.unclosedString"));
                 char c = s[i++];
                 if (c == '"') return sb.ToString();
                 if (c != '\\') { sb.Append(c); continue; }
-                if (i >= s.Length) throw new JsonLiteException("转义序列未完成");
+                if (i >= s.Length) throw new JsonLiteException(L10n.T("json.escapeUnfinished"));
                 char e = s[i++];
                 switch (e)
                 {
@@ -262,11 +262,11 @@ namespace HotkeyHound.Core
                     case 'r': sb.Append('\r'); break;
                     case 't': sb.Append('\t'); break;
                     case 'u':
-                        if (i + 4 > s.Length) throw new JsonLiteException("\\u 转义不完整");
+                        if (i + 4 > s.Length) throw new JsonLiteException(L10n.T("json.unicodeEscapeIncomplete"));
                         sb.Append((char)ushort.Parse(s.Substring(i, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture));
                         i += 4;
                         break;
-                    default: throw new JsonLiteException("未知转义 \\" + e);
+                    default: throw new JsonLiteException(L10n.F("json.unknownEscape", e));
                 }
             }
         }
@@ -280,11 +280,11 @@ namespace HotkeyHound.Core
                 if ((c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E') { i++; continue; }
                 break;
             }
-            if (i == start) throw new JsonLiteException("位置 " + start + " 处不是合法 JSON 值");
+            if (i == start) throw new JsonLiteException(L10n.F("json.badValue", start));
             string token = s.Substring(start, i - start);
             double d;
             if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out d))
-                throw new JsonLiteException("无法解析数字：" + token);
+                throw new JsonLiteException(L10n.F("json.badNumber", token));
             var v = new JsonValue();
             v.Kind = JsonKind.Number;
             v.Num = d;

@@ -204,6 +204,8 @@ namespace HotkeyHound.Core
             BuildHelp();
             BuildTerms();
             BuildProbeCatalog();
+            BuildAdapters();
+            BuildRuntime();
         }
 
         private static void A(string key, string zh, string en)
@@ -1594,6 +1596,307 @@ namespace HotkeyHound.Core
             A("rep.list.sep", "、", ", ");
         }
 
+        // ------------------------------------------------------------------ 适配器 / 引擎（M1）
+        // 约定：适配器只产出 L10n 键名，取词一律在渲染/记录边界做，保证语言在运行期才确定。
+
+        private static void BuildAdapters()
+        {
+            A("reserved.software", "Windows 系统保留", "Windows reserved");
+            A("reserved.module", "内置表", "Built-in table");
+            A("reserved.source", "(内置静态表)", "(built-in static table)");
+            A("reserved.taskbar.app", "启动/切换到任务栏第 {0} 个应用", "Launch/switch to taskbar app {0}");
+            A("reserved.taskbar.appAdmin", "以管理员身份启动任务栏第 {0} 个应用", "Launch taskbar app {0} as administrator");
+            A("reserved.taskbar.newInstance", "打开任务栏第 {0} 个应用的新实例", "Open taskbar app {0} in a new instance");
+            A("reserved.taskbar.jumpList", "打开任务栏第 {0} 个应用的跳转列表", "Open the jump list of taskbar app {0}");
+            A("reserved.lockComputer", "锁定计算机", "Lock the computer");
+            A("reserved.showDesktop", "显示/隐藏桌面", "Show/hide the desktop");
+            A("reserved.minimizeAll", "最小化所有窗口", "Minimize all windows");
+            A("reserved.restoreMinimized", "还原最小化的窗口", "Restore minimized windows");
+            A("reserved.fileExplorer", "打开文件资源管理器", "Open File Explorer");
+            A("reserved.runDialog", "打开「运行」对话框", "Open the Run dialog");
+            A("reserved.settings", "打开「设置」", "Open Settings");
+            A("reserved.search", "打开搜索", "Open search");
+            A("reserved.quickSettings", "打开快速设置", "Open Quick Settings");
+            A("reserved.notificationCenter", "打开通知中心", "Open Notification Center");
+            A("reserved.widgets", "打开小组件", "Open Widgets");
+            A("reserved.clipboardHistory", "剪贴板历史", "Clipboard history");
+            A("reserved.powerUserMenu", "打开高级用户菜单", "Open the Power User menu");
+            A("reserved.projectDisplay", "投影/外接显示", "Project / external display");
+            A("reserved.wirelessDisplay", "连接无线显示/音频", "Connect to a wireless display/audio");
+            A("reserved.lockOrientation", "锁定设备方向", "Lock device orientation");
+            A("reserved.accessibility", "打开「辅助功能」", "Open Accessibility");
+            A("reserved.feedbackHub", "反馈中心", "Feedback Hub");
+            A("reserved.voiceTyping", "语音输入", "Voice typing");
+            A("reserved.focusTip", "聚焦提示", "Set focus to a tip");
+            A("reserved.taskView", "任务视图", "Task View");
+            A("reserved.narrator", "启动讲述人", "Launch Narrator");
+            A("reserved.inputMethod", "切换输入法", "Switch input method");
+            A("reserved.systemProperties", "系统属性", "System properties");
+            A("reserved.screenshotPictures", "截屏并保存到图片文件夹", "Screenshot saved to the Pictures folder");
+            A("reserved.snipRegion", "截图工具（区域截图）", "Snipping tool (region capture)");
+            A("reserved.newDesktop", "新建虚拟桌面", "Create a new virtual desktop");
+            A("reserved.desktopLeft", "切换到左侧虚拟桌面", "Switch to the virtual desktop on the left");
+            A("reserved.desktopRight", "切换到右侧虚拟桌面", "Switch to the virtual desktop on the right");
+            A("reserved.closeDesktop", "关闭当前虚拟桌面", "Close the current virtual desktop");
+            A("reserved.resetGraphics", "重置显卡驱动", "Reset the graphics driver");
+            A("reserved.narratorAlt", "启动讲述人（替代入口）", "Launch Narrator (alternative entry)");
+            A("reserved.maximize", "窗口最大化", "Maximize the window");
+            A("reserved.restoreMinimize", "窗口还原/最小化", "Restore/minimize the window");
+            A("reserved.snapLeft", "窗口贴靠到左侧", "Snap the window to the left");
+            A("reserved.snapRight", "窗口贴靠到右侧", "Snap the window to the right");
+            A("reserved.minimizeOthers", "最小化除当前窗口外的所有窗口", "Minimize all windows except the current one");
+            A("reserved.snapLayouts", "打开贴靠布局", "Open Snap Layouts");
+            A("reserved.gameRecording", "开始/停止游戏录制", "Start/stop game recording");
+            A("reserved.recordLast30", "录制最近 30 秒", "Record the last 30 seconds");
+            A("reserved.gameScreenshot", "保存游戏截图", "Save a game screenshot");
+            A("reserved.fullscreenSomeApps", "在部分应用里全屏", "Full screen in some apps");
+            A("reserved.switchWindows", "切换窗口", "Switch windows");
+            A("reserved.switchWindowsReverse", "反向切换窗口", "Switch windows in reverse");
+            A("reserved.closeWindow", "关闭当前窗口", "Close the current window");
+            A("reserved.cycleWindows", "按顺序切换窗口", "Cycle through windows in order");
+            A("reserved.windowSystemMenu", "打开窗口系统菜单", "Open the window's system menu");
+            A("reserved.copyWindow", "截取当前窗口到剪贴板", "Copy the current window to the clipboard");
+            A("reserved.taskManager", "任务管理器", "Task Manager");
+            A("reserved.secureAttention", "安全注意序列", "Secure attention sequence");
+            A("reserved.runAsAdmin", "以管理员身份运行", "Run as administrator");
+            A("reserved.startMenu", "打开开始菜单", "Open the Start menu");
+            A("reserved.newFolder", "新建文件夹", "Create a new folder");
+            A("reserved.copyScreen", "截取全屏到剪贴板", "Copy the whole screen to the clipboard");
+            A("reserved.toggleNumLock", "切换数字键盘锁定", "Toggle Num Lock");
+            A("reserved.toggleScrollLock", "切换滚动锁定", "Toggle Scroll Lock");
+            A("reserved.toggleCapsLock", "切换大写锁定", "Toggle Caps Lock");
+
+            A("adapter.warnPrefix", "[警告]", "[Warning]");
+            A("adapter.collectFailed", "采集失败（已忽略）：{0}: {1}", "Collection failed (ignored): {0}: {1}");
+            A("adapter.common.globalHotkey", "全局热键", "Global hotkey");
+            A("adapter.common.config", "配置", "Config");
+            A("adapter.common.registry", "注册表", "Registry");
+
+            A("adapter.everything.newWindow", "打开新搜索窗口", "Open a new search window");
+            A("adapter.everything.showWindow", "显示主窗口", "Show the main window");
+            A("adapter.everything.toggleWindow", "显示/隐藏主窗口", "Show/hide the main window");
+            A("adapter.everything.notFound", "未找到配置文件：{0}", "Config file not found: {0}");
+            A("adapter.everything.parseFailed", "无法解析 {0} = {1}", "Cannot parse {0} = {1}");
+            A("adapter.everything.parsed", "解析出 {0} 条热键", "Parsed {0} hotkey(s)");
+
+            A("adapter.ptkey.configNotFound", "未找到键盘管理器配置：{0}", "Keyboard Manager config not found: {0}");
+            A("adapter.ptkey.parseFailed", "配置解析失败：{0}", "Failed to parse config: {0}");
+            A("adapter.ptkey.noRemapSection", "配置里没有 remapShortcuts 段", "Config has no remapShortcuts section");
+            A("adapter.ptkey.noGlobalArray", "配置里没有 remapShortcuts.global 数组", "Config has no remapShortcuts.global array");
+            A("adapter.ptkey.badOriginal", "无法解析 originalKeys = {0}", "Cannot parse originalKeys = {0}");
+            A("adapter.ptkey.run", "运行 {0}", "Run {0}");
+            A("adapter.ptkey.remap", "重映射 → {0}", "Remap → {0}");
+            A("adapter.ptkey.unknownTarget", "(未知目标)", "(unknown target)");
+            A("adapter.ptkey.parsed", "解析出 {0} 条全局重映射", "Parsed {0} global remap(s)");
+
+            A("adapter.ptmod.notFound", "未安装或未找到配置目录：{0}", "Not installed, or config directory not found: {0}");
+            A("adapter.ptmod.parseFailed", "配置解析失败（已跳过）：{0}", "Failed to parse config (skipped): {0}");
+            A("adapter.ptmod.parsed", "共解析出 {0} 条热键声明", "Parsed {0} hotkey declaration(s) in total");
+            A("adapter.ptmod.globalModule", "PowerToys 全局", "PowerToys global");
+            A("adapter.ptmod.hotkey", "热键", "Hotkey");
+            A("adapter.ptmod.disabled", "[已禁用] {0}", "[disabled] {0}");
+
+            A("adapter.wallpaper.parseFailed", "配置解析失败：{0}", "Failed to parse config: {0}");
+            A("adapter.wallpaper.notFound", "未找到 config.json（按设计静默跳过）",
+              "config.json not found (silently skipped by design)");
+            A("adapter.wallpaper.registryFailed", "注册表读取失败：{0}", "Failed to read the registry: {0}");
+            A("adapter.wallpaper.hotkey", "热键 {0}", "Hotkey {0}");
+            A("adapter.wallpaper.parsed", "解析出 {0} 条热键", "Parsed {0} hotkey(s)");
+
+            A("adapter.msi.osdToggle", "切换屏幕显示", "Toggle the on-screen display");
+            A("adapter.msi.osdOn", "开启屏幕显示", "Enable the on-screen display");
+            A("adapter.msi.osdOff", "关闭屏幕显示", "Disable the on-screen display");
+            A("adapter.msi.osdServerBlock", "屏蔽屏幕显示服务", "Block the OSD server");
+            A("adapter.msi.limiterToggle", "切换帧率限制", "Toggle the framerate limit");
+            A("adapter.msi.limiterOn", "开启帧率限制", "Enable the framerate limit");
+            A("adapter.msi.limiterOff", "关闭帧率限制", "Disable the framerate limit");
+            A("adapter.msi.screenshot", "截图", "Screenshot");
+            A("adapter.msi.videoCapture", "视频录制", "Video capture");
+            A("adapter.msi.prerecord", "预先录制", "Prerecord");
+            A("adapter.msi.ptt", "按键通话", "Push to talk");
+            A("adapter.msi.ptt2", "按键通话 2", "Push to talk 2");
+            A("adapter.msi.beginRecord", "开始录制", "Start recording");
+            A("adapter.msi.endRecord", "结束录制", "Stop recording");
+            A("adapter.msi.notFound", "未找到配置文件：{0}", "Config file not found: {0}");
+            A("adapter.msi.badEncoding", "无法解析热键编码 {0}={1}", "Cannot parse hotkey encoding {0}={1}");
+            A("adapter.msi.profile", "切换到超频配置 {0}", "Switch to OC profile {0}");
+            A("adapter.msi.parsed", "解析出 {0} 条热键（本机若全为未设置则为 0）",
+              "Parsed {0} hotkey(s) (0 if every entry is unset on this machine)");
+
+            A("adapter.obs.startStreaming", "开始推流", "Start streaming");
+            A("adapter.obs.stopStreaming", "停止推流", "Stop streaming");
+            A("adapter.obs.startRecording", "开始录制", "Start recording");
+            A("adapter.obs.stopRecording", "停止录制", "Stop recording");
+            A("adapter.obs.toggleRecording", "切换录制", "Toggle recording");
+            A("adapter.obs.toggleStreaming", "切换推流", "Toggle streaming");
+            A("adapter.obs.startReplayBuffer", "开启回放缓存", "Start the replay buffer");
+            A("adapter.obs.stopReplayBuffer", "关闭回放缓存", "Stop the replay buffer");
+            A("adapter.obs.saveReplay", "保存回放", "Save replay");
+            A("adapter.obs.pauseRecording", "暂停录制", "Pause recording");
+            A("adapter.obs.resumeRecording", "继续录制", "Resume recording");
+            A("adapter.obs.startVirtualCam", "开启虚拟摄像头", "Start the virtual camera");
+            A("adapter.obs.stopVirtualCam", "关闭虚拟摄像头", "Stop the virtual camera");
+            A("adapter.obs.screenshot", "截图", "Screenshot");
+            A("adapter.obs.pushToTalk", "按键通话", "Push to talk");
+            A("adapter.obs.pushToMute", "按键静音", "Push to mute");
+            A("adapter.obs.togglePreview", "切换预览", "Toggle the preview");
+            A("adapter.obs.startReplayBuffer2", "开始回放缓存", "Start the replay buffer");
+            A("adapter.obs.notFound", "未找到 OBS 配置目录：{0}", "OBS config directory not found: {0}");
+            A("adapter.obs.globalModule", "全局", "Global");
+            A("adapter.obs.profileSet", "配置集 {0}", "Profile set {0}");
+            A("adapter.obs.badValue", "无法解析 {0} = {1}（{2}）", "Cannot parse {0} = {1} ({2})");
+            A("adapter.obs.parsed", "解析出 {0} 条热键", "Parsed {0} hotkey(s)");
+
+            A("adapter.nvidia.overlayToggle", "叠加层开关", "Overlay toggle");
+            A("adapter.nvidia.screenshot", "截图", "Screenshot");
+            A("adapter.nvidia.manualRecord", "手动录制", "Manual recording");
+            A("adapter.nvidia.replayToggle", "即时回放开关", "Instant replay toggle");
+            A("adapter.nvidia.replayPreset", "即时回放预设", "Instant replay preset");
+            A("adapter.nvidia.replayStyle1", "即时回放预设样式 1", "Instant replay preset style 1");
+            A("adapter.nvidia.replayStyle2", "即时回放预设样式 2", "Instant replay preset style 2");
+            A("adapter.nvidia.replayStyle3", "即时回放预设样式 3", "Instant replay preset style 3");
+            A("adapter.nvidia.replayUi", "即时回放界面", "Instant replay UI");
+            A("adapter.nvidia.anselUi", "Ansel 拍照界面", "Ansel photo mode UI");
+            A("adapter.nvidia.perfOverlay", "性能监控叠加层", "Performance overlay");
+            A("adapter.nvidia.perfCycle", "性能监控指标切换", "Cycle performance metrics");
+            A("adapter.nvidia.perfResetAverage", "重置性能监控平均值", "Reset performance average metrics");
+            A("adapter.nvidia.perfLogging", "性能监控日志开关", "Toggle performance logging");
+            A("adapter.nvidia.perfFont", "性能监控字体切换", "Cycle performance overlay font");
+            A("adapter.nvidia.micToggle", "麦克风开关", "Microphone toggle");
+            A("adapter.nvidia.micPtt", "麦克风按键通话", "Microphone push to talk");
+            A("adapter.nvidia.chatToggle", "聊天界面开关", "Chat UI toggle");
+            A("adapter.nvidia.chatPtt", "聊天按键通话", "Chat push to talk");
+            A("adapter.nvidia.keyboardDialog", "键盘输入对话框", "Keyboard input dialog");
+            A("adapter.nvidia.overlayB", "自定义叠加层 B", "Custom overlay B");
+            A("adapter.nvidia.overlayC", "自定义叠加层 C", "Custom overlay C");
+            A("adapter.nvidia.keyMissing", "注册表项不存在（未安装或从未配置）：{0}",
+              "Registry key does not exist (not installed or never configured): {0}");
+            A("adapter.nvidia.badCombo", "无法组合出有效热键：{0}", "Cannot compose a valid hotkey from {0}");
+            A("adapter.nvidia.parsed", "解析出 {0} 条热键", "Parsed {0} hotkey(s)");
+        }
+
+        // ------------------------------------------------------------------ 引擎 / 运行时（M1）
+        // 这些是 Say()/LastError 文案：会原样进报告与界面，必须在英文模式下也是英文。
+
+        private static void BuildRuntime()
+        {
+            A("attrib.dllReleaseFailed", "hook DLL 释放失败：{0}", "Failed to release the hook DLL: {0}");
+            A("attrib.threadTimeout", "钩子线程未能就绪（超时）", "The hook thread did not become ready (timed out)");
+            A("attrib.threadJoinTimeout", "警告：钩子线程在 4 秒内没有退出",
+              "Warning: the hook thread did not exit within 4 seconds");
+            A("attrib.mapCreateFailed", "创建共享内存 {0} 失败，错误码 {1}",
+              "Failed to create shared memory {0}; error code {1}");
+            A("attrib.mapViewFailed", "映射共享内存失败，错误码 {0}", "Failed to map shared memory; error code {0}");
+            A("attrib.loadLibraryFailed", "LoadLibrary 失败：{0}，错误码 {1}", "LoadLibrary failed: {0}; error code {1}");
+            A("attrib.exportMissing", "DLL 里找不到导出 HotkeyHoundHookProc",
+              "The DLL does not export HotkeyHoundHookProc");
+            A("attrib.loadLibraryOk", "LoadLibrary 成功：hMod=0x{0}", "LoadLibrary succeeded: hMod=0x{0}");
+            A("attrib.exportAddress", "导出地址 HotkeyHoundHookProc=0x{0}", "Export address HotkeyHoundHookProc=0x{0}");
+            A("attrib.hookInstallFailed", "SetWindowsHookEx(WH_GETMESSAGE) 失败，错误码 {0}",
+              "SetWindowsHookEx(WH_GETMESSAGE) failed; error code {0}");
+            A("attrib.uipiHint",
+              "提示：当前以{0}运行，UIPI 会阻止把 DLL 注入到普通进程。请把 exe 复制到普通目录后再运行。",
+              "Note: running at {0}; UIPI blocks DLL injection into normal processes. Copy the exe to a normal "
+              + "directory before running it again.");
+            A("attrib.hookInstallOk", "SetWindowsHookEx 成功：hook=0x{0}，控制窗口=0x{1}",
+              "SetWindowsHookEx succeeded: hook=0x{0}, control window=0x{1}");
+            A("attrib.mapReady", "共享内存 {0} 已就绪（magic=0x484B5354, arm=1, ctl=0x{1}）",
+              "Shared memory {0} is ready (magic=0x484B5354, arm=1, ctl=0x{1})");
+            A("attrib.wmClose", "收到 WM_CLOSE，钩子线程退出", "Received WM_CLOSE; the hook thread is exiting");
+            A("attrib.threadException", "钩子线程异常：{0}", "Hook thread exception: {0}");
+            A("attrib.registerClassFailed", "RegisterClassEx 失败，错误码 {0}",
+              "RegisterClassEx failed; error code {0}");
+            A("attrib.createWindowFailed", "创建控制窗口失败，错误码 {0}",
+              "Failed to create the control window; error code {0}");
+            A("attrib.msgFilterFailed",
+              "提示：放行归属上报消息失败（错误码 {0}）；以管理员身份运行时可能收不到来自普通权限进程的报告。",
+              "Note: failed to allow the attribution report message (error code {0}); when running as "
+              + "administrator, reports from normal-privilege processes may not arrive.");
+            A("attrib.truncated", "归属记录已超过 {0} 条上限，开始丢弃最早的记录（界面与报告只保留最近的）。",
+              "Attribution records exceeded the {0}-record limit; the oldest are dropped (the UI and report "
+              + "keep only the most recent).");
+            A("attrib.report", "归属报告：{0}{1}", "Attribution report: {0}{1}");
+            A("attrib.unhooked", "已 UnhookWindowsHookEx（旧句柄 0x{0}）",
+              "UnhookWindowsHookEx done (old handle 0x{0})");
+
+            A("json.nullInput", "输入为 null", "Input is null");
+            A("json.tooDeep", "JSON 嵌套超过 {0} 层，放弃解析", "JSON nesting exceeds {0} levels; giving up");
+            A("json.unexpectedEnd", "JSON 意外结束", "Unexpected end of JSON");
+            A("json.expected", "位置 {0} 处期望 {1}", "Expected {1} at position {0}");
+            A("json.expectedMember", "位置 {0} 处期望对象成员名", "Expected an object member name at position {0}");
+            A("json.expectedColon", "位置 {0} 处期望 ':'", "Expected ':' at position {0}");
+            A("json.unclosedObject", "对象未闭合", "Object is not closed");
+            A("json.expectedCommaOrBrace", "位置 {0} 处期望 ',' 或 '}'", "Expected ',' or '}' at position {0}");
+            A("json.unclosedArray", "数组未闭合", "Array is not closed");
+            A("json.expectedCommaOrBracket", "位置 {0} 处期望 ',' 或 ']'", "Expected ',' or ']' at position {0}");
+            A("json.unclosedString", "字符串未闭合", "String is not closed");
+            A("json.escapeUnfinished", "转义序列未完成", "Escape sequence is incomplete");
+            A("json.unicodeEscapeIncomplete", "\\u 转义不完整", "Incomplete \\u escape");
+            A("json.unknownEscape", "未知转义 \\{0}", "Unknown escape \\{0}");
+            A("json.badValue", "位置 {0} 处不是合法 JSON 值", "Not a valid JSON value at position {0}");
+            A("json.badNumber", "无法解析数字：{0}", "Cannot parse number: {0}");
+
+            A("il.sidReadFailed", "(读取失败)", "(read failed)");
+            A("il.embeddedReadFailed", "读取内嵌资源失败：{0}", "Failed to read the embedded resource: {0}");
+            A("il.resourceMissing", "程序里没有内嵌 {0}（构建时原生 DLL 没编出来？）",
+              "The executable does not embed {0} (was the native DLL not built?)");
+            A("il.dllExtracted", "hook DLL 释放到：{0}（{1} 字节）", "Hook DLL extracted to: {0} ({1} bytes)");
+            A("il.dllDirSkipped", "hook DLL 释放目录不可用，已跳过：{0} → {1}：{2}",
+              "Hook DLL directory unusable, skipped: {0} → {1}: {2}");
+            A("il.noWritableDir", "所有候选目录都写不进去。最后一次：{0}",
+              "Could not write to any candidate directory. Last error: {0}");
+            A("il.noCandidate", "无候选目录", "no candidate directory");
+
+            A("sniff.threadTimeout", "低层键盘钩子线程未能就绪（超时）",
+              "The low-level keyboard hook thread did not become ready (timed out)");
+            A("sniff.threadJoinTimeout", "警告：钩子线程在 4 秒内没有退出",
+              "Warning: the hook thread did not exit within 4 seconds");
+            A("sniff.installFailed", "SetWindowsHookEx(WH_KEYBOARD_LL) 失败，错误码 {0}",
+              "SetWindowsHookEx(WH_KEYBOARD_LL) failed; error code {0}");
+            A("sniff.installed", "WH_KEYBOARD_LL 已安装：hook=0x{0}，线程 {1}",
+              "WH_KEYBOARD_LL installed: hook=0x{0}, thread {1}");
+            A("sniff.threadException", "钩子线程异常：{0}", "Hook thread exception: {0}");
+            A("sniff.unhooked", "已 UnhookWindowsHookEx（WH_KEYBOARD_LL，句柄 0x{0}）",
+              "UnhookWindowsHookEx done (WH_KEYBOARD_LL, handle 0x{0})");
+            A("sniff.notReady", "低层键盘钩子还没装好", "The low-level keyboard hook is not installed yet");
+
+            A("cfg.adapterCrashed", "[警告][{0}] 适配器崩溃（已忽略）：{1}", "[Warning][{0}] Adapter crashed (ignored): {1}");
+            A("cfg.adapterContributed", "引擎 D：{0} 贡献 {1} 条声明",
+              "Engine D: {0} contributed {1} declaration(s)");
+            A("cfg.reservedFailed", "[警告][系统保留表] 失败： {0}", "[Warning][system reserved table] failed: {0}");
+            A("cfg.done", "引擎 D 完成：共 {0} 条声明，{1} 条系统保留提示",
+              "Engine D finished: {0} declaration(s) in total, {1} reserved-combination hint(s)");
+
+            A("helper.parseFailed", "HELPER_ERROR 无法解析热键：{0}", "HELPER_ERROR cannot parse hotkey: {0}");
+            A("helper.registerClassFailed", "HELPER_ERROR RegisterClassEx 失败，错误码 {0}",
+              "HELPER_ERROR RegisterClassEx failed; error code {0}");
+            A("helper.createWindowFailed", "HELPER_ERROR CreateWindowEx 失败，错误码 {0}",
+              "HELPER_ERROR CreateWindowEx failed; error code {0}");
+
+            A("elev.noExePath", "无法确定当前可执行文件路径", "Cannot determine the current executable path");
+            A("elev.cancelled", "用户取消了提权（ERROR_CANCELLED）", "The user cancelled elevation (ERROR_CANCELLED)");
+            A("elev.shellExecuteFailed", "ShellExecuteEx 失败，错误码 {0}", "ShellExecuteEx failed; error code {0}");
+
+            A("cat.disabledPrefix", "[已禁用]", "[disabled]");
+
+            A("shstate.tempDirSkipped", "临时目录不可写，已跳过：{0}", "Temp directory is not writable, skipped: {0}");
+            A("shstate.noWritableTemp", "找不到可写的临时目录。最后一次失败：{0}",
+              "No writable temp directory found. Last failure: {0}");
+
+            A("helper32.processStartNull", "Process.Start 返回 null", "Process.Start returned null");
+
+            A("ui.screenshot.windowShown", "窗口已显示，开始扫描", "Window shown; starting the scan");
+            A("ui.screenshot.scanDone", "扫描结束：{0}", "Scan finished: {0}");
+            A("ui.screenshot.scanOk", "成功", "succeeded");
+            A("ui.screenshot.finished", "截图完成", "Screenshot capture finished");
+            A("ui.screenshot.modeFailed", "截图模式失败：{0}", "Screenshot mode failed: {0}");
+            A("ui.screenshot.captureFailed", "截图失败：{0}", "Screenshot capture failed: {0}");
+            A("ui.screenshot.tabs", "标签页数：{0}，窗口尺寸：{1}x{2}", "Tab count: {0}; window size: {1}x{2}");
+            A("ui.screenshot.render", "渲染 {0}（标签页 {1}，尺寸 {2}x{3}）",
+              "Rendering {0} (tab {1}, size {2}x{3})");
+            A("ui.screenshot.rendered", "已渲染 {0}.png", "Rendered {0}.png");
+        }
+
         // ------------------------------------------------------------------ 术语表
         // 引擎 D 的适配器产出的是中文「用途/模块」短语，这些文本会进入报告和界面。
         // 为避免直接改十几个适配器（风险大且易漏），这里用一张「中文→英文」术语表，
@@ -1780,6 +2083,14 @@ namespace HotkeyHound.Core
             int j = zh.IndexOf(" 个应用", i, StringComparison.Ordinal);
             if (j < 0) j = zh.Length;
             return zh.Substring(i, j - i).Trim();
+        }
+
+        /// <summary>
+        /// 适配器把「已禁用」标记拼在用途前面；判定不能写死中文，否则英文模式下逻辑会失效。
+        /// </summary>
+        public static bool IsDisabledPurpose(string purpose)
+        {
+            return purpose != null && purpose.StartsWith(T("cat.disabledPrefix"), StringComparison.Ordinal);
         }
     }
 }

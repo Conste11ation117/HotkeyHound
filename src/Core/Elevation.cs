@@ -83,7 +83,7 @@ namespace HotkeyHound.Core
                 string exe = CurrentExecutablePath();
                 if (string.IsNullOrEmpty(exe))
                 {
-                    LastError = "无法确定当前可执行文件路径";
+                    LastError = L10n.T("elev.noExePath");
                     return false;
                 }
 
@@ -104,10 +104,10 @@ namespace HotkeyHound.Core
                     if (err == ERROR_CANCELLED)
                     {
                         LastWasCancelled = true;
-                        LastError = "用户取消了提权（ERROR_CANCELLED）";
+                        LastError = L10n.T("elev.cancelled");
                         return false;
                     }
-                    LastError = "ShellExecuteEx 失败，错误码 " + err;
+                    LastError = L10n.F("elev.shellExecuteFailed", err);
                     return false;
                 }
 

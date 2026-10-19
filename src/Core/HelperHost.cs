@@ -43,7 +43,7 @@ namespace HotkeyHound.Core
             KeyCombo combo = KeyCombo.Parse(keyText);
             if (combo == null)
             {
-                Say("HELPER_ERROR 无法解析热键：" + keyText);
+                Say(L10n.F("helper.parseFailed", keyText));
                 Flush();
                 return 4;
             }
@@ -58,7 +58,7 @@ namespace HotkeyHound.Core
             wc.lpszClassName = className;
             if (NativeMethods.RegisterClassExW(ref wc) == 0)
             {
-                Say("HELPER_ERROR RegisterClassEx 失败，错误码 " + Marshal.GetLastWin32Error());
+                Say(L10n.F("helper.registerClassFailed", Marshal.GetLastWin32Error()));
                 Flush();
                 return 4;
             }
@@ -68,7 +68,7 @@ namespace HotkeyHound.Core
                                                         NativeMethods.GetModuleHandleW(null), IntPtr.Zero);
             if (hwnd == IntPtr.Zero)
             {
-                Say("HELPER_ERROR CreateWindowEx 失败，错误码 " + Marshal.GetLastWin32Error());
+                Say(L10n.F("helper.createWindowFailed", Marshal.GetLastWin32Error()));
                 Flush();
                 return 4;
             }
