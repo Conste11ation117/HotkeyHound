@@ -141,8 +141,19 @@ namespace HotkeyHound
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr GetStdHandle(int nStdHandle);
 
-        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr FindWindowW(string lpClassName, string lpWindowName);
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowTextW(IntPtr hWnd, StringBuilder text, int maxCount);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
 
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -297,6 +308,12 @@ namespace HotkeyHound
                 if (!string.IsNullOrEmpty(opts.Theme)) HotkeyHound.Ui.UiTheme.Initialize(opts.Theme);
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
+                // 首次启动先选语言（默认英文）：主窗口的全部文字在构造时按语言生成，
+                // 所以必须赶在 MainForm 之前。截图模式与显式 --lang 不弹。
+                if (opts.ScreenshotDir == null && string.IsNullOrEmpty(opts.Lang) && !L10n.HasConfiguredLanguage())
+                {
+                    HotkeyHound.Ui.FirstRunLanguage.Ask();
+                }
                 Application.Run(new HotkeyHound.Ui.MainForm(opts.ScreenshotDir));
                 return 0;
             }
@@ -314,7 +331,8 @@ namespace HotkeyHound
 
         /// <summary>
         /// 保证只有一个图形实例在跑（见 _instanceMutex 的注释）。
-        /// 已有实例时把它切到前台并返回 false，调用方应当安静退出。
+        /// 已有实例时先短暂等它释放互斥体（提权交接时旧实例正在退出），
+        /// 等不到再把它切到前台并返回 false，调用方应当安静退出。
         /// </summary>
         private static bool EnsureSingleInstance()
         {
@@ -323,6 +341,17 @@ namespace HotkeyHound
                 bool created;
                 _instanceMutex = new System.Threading.Mutex(true, @"Local\HotkeyHound.SingleInstance", out created);
                 if (created) return true;
+                try
+                {
+                    // 提权重启的交接窗口：旧实例已经/即将释放互斥体，给它 1.5 秒。
+                    if (_instanceMutex.WaitOne(1500)) return true;
+                }
+                catch (System.Threading.AbandonedMutexException)
+                {
+                    // 旧实例异常退出，互斥体归本进程接管。
+                    return true;
+                }
+                catch (Exception) { }
                 BringExistingToFront();
                 return false;
             }
@@ -333,14 +362,66 @@ namespace HotkeyHound
             }
         }
 
+        /// <summary>
+        /// 提权重启前释放单实例互斥体。
+        /// v1.3.1「点了提权重启没反应」的根因：新的提权实例启动时，旧实例还占着互斥体
+        /// （正弹着模态提示框），新实例判定「已有实例在跑」就安静退出了；随后旧实例关闭，
+        /// 结果桌面上什么都没有。所以必须先把互斥体放掉，再拉起新实例。
+        /// </summary>
+        public static void ReleaseSingleInstance()
+        {
+            try
+            {
+                System.Threading.Mutex m = _instanceMutex;
+                _instanceMutex = null;
+                if (m != null)
+                {
+                    try { m.ReleaseMutex(); }
+                    catch (Exception) { }
+                    m.Dispose();
+                }
+            }
+            catch (Exception) { }
+        }
+
+        /// <summary>提权失败/被取消后把互斥体拿回来，避免两个图形实例共用 Local\HotkeyHound.Ctl。</summary>
+        public static void ReacquireSingleInstance()
+        {
+            try
+            {
+                if (_instanceMutex != null) return;
+                bool created;
+                _instanceMutex = new System.Threading.Mutex(true, @"Local\HotkeyHound.SingleInstance", out created);
+            }
+            catch (Exception) { }
+        }
+
         private static void BringExistingToFront()
         {
             try
             {
-                IntPtr h = FindWindowW(null, AppInfo.Title);
-                if (h == IntPtr.Zero) return;
-                ShowWindow(h, SW_RESTORE);
-                SetForegroundWindow(h);
+                // 窗口标题是「HotkeyHound —— 描述」（ui.title 格式化结果），
+                // FindWindowW 全字匹配永远找不到——改用 EnumWindows 做前缀匹配。
+                IntPtr found = IntPtr.Zero;
+                uint self = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+                EnumWindows(delegate (IntPtr hWnd, IntPtr lParam)
+                {
+                    if (!IsWindowVisible(hWnd)) return true;
+                    uint pid;
+                    GetWindowThreadProcessId(hWnd, out pid);
+                    if (pid == self) return true;
+                    var sb = new StringBuilder(512);
+                    GetWindowTextW(hWnd, sb, sb.Capacity);
+                    if (sb.ToString().StartsWith(AppInfo.Title, StringComparison.Ordinal))
+                    {
+                        found = hWnd;
+                        return false;
+                    }
+                    return true;
+                }, IntPtr.Zero);
+                if (found == IntPtr.Zero) return;
+                ShowWindow(found, SW_RESTORE);
+                SetForegroundWindow(found);
             }
             catch (Exception) { }
         }

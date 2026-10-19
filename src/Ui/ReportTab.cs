@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -24,27 +24,48 @@ namespace HotkeyHound.Ui
         {
             _host = host;
 
+            // 整页用流式堆栈（不再用绝对坐标/锚点）：窗口多窄都不截断，矮了还能滚动。
+            var body = new Panel();
+            body.Dock = DockStyle.Fill;
+            body.AutoScroll = true;
+
+            var stack = UiTheme.NewStack();
+            stack.Padding = new Padding(14, 8, 14, 10);
+
             var heading = new Label();
             heading.Text = L10n.T("ui.rt.heading");
             heading.Font = UiTheme.TitleFont(15F);
-            heading.Location = new Point(16, 16);
             heading.AutoSize = true;
+            heading.Margin = new Padding(0, 2, 0, 10);
+
+            var pathRow = new TableLayoutPanel();
+            pathRow.Dock = DockStyle.Fill;
+            pathRow.AutoSize = true;
+            pathRow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            pathRow.ColumnCount = 4;
+            pathRow.RowCount = 1;
+            pathRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            pathRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            try { pathRow.BackColor = Color.Transparent; }
+            catch (Exception) { }
 
             var pathLabel = new Label();
             pathLabel.Text = L10n.T("ui.rt.pathLabel");
-            pathLabel.Location = new Point(18, 62);
             pathLabel.AutoSize = true;
+            pathLabel.Dock = DockStyle.Fill;
+            pathLabel.Margin = new Padding(0, 6, 8, 0);
 
             _pathBox = new TextBox();
-            _pathBox.Location = new Point(100, 58);
-            _pathBox.Width = 610;
-            _pathBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            _pathBox.Dock = DockStyle.Fill;
+            _pathBox.Margin = new Padding(0, 4, 8, 4);
 
             _openButton = new Button();
             _openButton.Text = L10n.T("ui.rt.open");
-            _openButton.Location = new Point(722, 56);
-            _openButton.Size = new Size(110, 26);
-            _openButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            _openButton.Size = new Size(110, 28);
+            _openButton.Margin = new Padding(0, 4, 8, 4);
             _openButton.Click += delegate (object s, EventArgs e)
             {
                 string p = _pathBox.Text.Trim();
@@ -59,83 +80,76 @@ namespace HotkeyHound.Ui
 
             _generateButton = new Button();
             _generateButton.Text = L10n.T("ui.rt.generate");
-            _generateButton.Location = new Point(840, 56);
-            _generateButton.Size = new Size(110, 26);
-            _generateButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            _generateButton.Size = new Size(110, 28);
+            _generateButton.Margin = new Padding(0, 4, 0, 4);
             _generateButton.Click += delegate (object s, EventArgs e) { Generate(); };
 
-            _reportInfo = new Label();
-            _reportInfo.Location = new Point(18, 92);
-            _reportInfo.AutoSize = true;
-            _reportInfo.ForeColor = UiTheme.Muted;
-            _reportInfo.Text = L10n.T("ui.rt.notGenerated");
+            pathRow.Controls.Add(pathLabel, 0, 0);
+            pathRow.Controls.Add(_pathBox, 1, 0);
+            pathRow.Controls.Add(_openButton, 2, 0);
+            pathRow.Controls.Add(_generateButton, 3, 0);
+
+            _reportInfo = UiTheme.StackLabel(L10n.T("ui.rt.notGenerated"), UiTheme.Muted);
 
             // 语言切换：放在「报告与关于」页。切换后提示需要重启（界面文本在启动时已构建）。
+            var langRow = UiTheme.NewFlowRow();
             var langLabel = new Label();
             langLabel.Text = L10n.T("ui.rt.langLabel");
-            langLabel.Location = new Point(18, 118);
             langLabel.AutoSize = true;
-
+            langLabel.Anchor = AnchorStyles.Left;
+            langLabel.Margin = new Padding(0, 2, 8, 2);
             _langBox = new ComboBox();
             _langBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            _langBox.Location = new Point(150, 114);
             _langBox.Width = 200;
+            _langBox.Margin = new Padding(0, 2, 8, 2);
             _langBox.Items.Add(L10n.LangDisplay(L10n.Chinese));
             _langBox.Items.Add(L10n.LangDisplay(L10n.English));
             _langBox.SelectedIndex = L10n.Current == L10n.Chinese ? 0 : 1;
             _langBox.SelectedIndexChanged += OnLanguageChanged;
+            langRow.Controls.Add(langLabel);
+            langRow.Controls.Add(_langBox);
 
             // 主题切换：与语言一样写进同一个 settings.ini；WinForms 原生控件换肤不可靠，提示重启。
+            var themeRow = UiTheme.NewFlowRow();
             var themeLabel = new Label();
             themeLabel.Text = L10n.T("ui.rt.themeLabel");
-            themeLabel.Location = new Point(18, 146);
             themeLabel.AutoSize = true;
-
+            themeLabel.Anchor = AnchorStyles.Left;
+            themeLabel.Margin = new Padding(0, 2, 8, 2);
             _themeBox = new ComboBox();
             _themeBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            _themeBox.Location = new Point(150, 142);
             _themeBox.Width = 200;
+            _themeBox.Margin = new Padding(0, 2, 8, 2);
             _themeBox.Items.Add(L10n.T("ui.rt.themeSystem"));
             _themeBox.Items.Add(L10n.T("ui.rt.themeLight"));
             _themeBox.Items.Add(L10n.T("ui.rt.themeDark"));
             _themeBox.SelectedIndex = ThemeIndexOf(UiTheme.Mode);
             _themeBox.SelectedIndexChanged += OnThemeChanged;
+            themeRow.Controls.Add(themeLabel);
+            themeRow.Controls.Add(_themeBox);
 
-            _releaseNote = new Label();
-            _releaseNote.Location = new Point(18, 184);
-            _releaseNote.AutoSize = true;
-            _releaseNote.MaximumSize = new Size(1000, 0);
-            _releaseNote.Text =
+            _releaseNote = UiTheme.StackLabel(
                 L10n.F("ui.rt.release", AppInfo.Title, AppInfo.Version, AppInfo.VersionNote, AppInfo.Framework,
                        AppInfo.MachineName, AppInfo.UserName,
-                       AppInfo.IsAdministrator() ? L10n.T("common.yes") : L10n.T("common.no"));
+                       AppInfo.IsAdministrator() ? L10n.T("common.yes") : L10n.T("common.no")),
+                UiTheme.Text);
+            _releaseNote.Margin = new Padding(0, 10, 0, 4);
 
-            _limits = new Label();
-            _limits.Location = new Point(18, 282);
-            _limits.AutoSize = true;
-            _limits.MaximumSize = new Size(1000, 0);
-            _limits.Text = L10n.T("ui.rt.limits");
+            _limits = UiTheme.StackLabel(L10n.T("ui.rt.limits"), UiTheme.Muted);
 
-            Controls.Add(heading);
-            Controls.Add(pathLabel);
-            Controls.Add(_pathBox);
-            Controls.Add(_openButton);
-            Controls.Add(_generateButton);
-            Controls.Add(_reportInfo);
-            Controls.Add(langLabel);
-            Controls.Add(_langBox);
-            Controls.Add(themeLabel);
-            Controls.Add(_themeBox);
-            Controls.Add(_releaseNote);
-            Controls.Add(_limits);
+            UiTheme.StackAdd(stack, heading);
+            UiTheme.StackAdd(stack, pathRow);
+            UiTheme.StackAdd(stack, _reportInfo);
+            UiTheme.StackAdd(stack, langRow);
+            UiTheme.StackAdd(stack, themeRow);
+            UiTheme.StackAdd(stack, _releaseNote);
+            UiTheme.StackAdd(stack, _limits);
+
+            body.Controls.Add(stack);
+            Controls.Add(body);
 
             _langInitializing = false;
             _themeInitializing = false;
-
-            Resize += delegate (object s, EventArgs e)
-            {
-                _pathBox.Width = Math.Max(200, ClientSize.Width - 460);
-            };
         }
 
         private void OnLanguageChanged(object sender, EventArgs e)

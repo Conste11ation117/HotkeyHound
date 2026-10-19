@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -19,59 +19,61 @@ namespace HotkeyHound.Ui
         private readonly Label[] _cardValues;
         private readonly Label[] _cardTitles;
         private readonly ListView _list;
-        private readonly Label _hint;
 
         public OverviewTab(MainForm host)
         {
             _host = host;
 
-            var top = new Panel();
-            top.Dock = DockStyle.Top;
-            top.Height = 96;
+            // ------------------------------------------------------------ 顶部：自动换行堆栈
+            var top = UiTheme.NewStack();
+
+            var buttonRow = UiTheme.NewFlowRow();
 
             _scanButton = new Button();
             _scanButton.Text = L10n.T("ui.ov.scan");
             _scanButton.Font = UiTheme.TitleFont(12F);
-            _scanButton.Size = new Size(150, 46);
-            _scanButton.Location = new Point(0, 4);
+            _scanButton.Size = new Size(160, 46);
+            _scanButton.Margin = new Padding(0, 2, 10, 2);
             _scanButton.Click += OnScanClick;
             UiTheme.MarkPrimary(_scanButton);
 
             _reportButton = new Button();
             _reportButton.Text = L10n.T("ui.ov.report");
-            _reportButton.Size = new Size(150, 42);
-            _reportButton.Location = new Point(160, 6);
+            _reportButton.Size = new Size(160, 42);
+            _reportButton.Margin = new Padding(0, 4, 10, 4);
             _reportButton.Enabled = false;
             _reportButton.Click += OnReportClick;
 
             _elevateButton = new Button();
             _elevateButton.Text = L10n.T("ui.ov.elevate");
-            _elevateButton.Size = new Size(150, 42);
-            _elevateButton.Location = new Point(320, 6);
+            // 按钮宽度按实际文字量出来：写死 160 会把「以管理员身份重启」截掉最后两个字。
+            _elevateButton.AutoSize = true;
+            _elevateButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            _elevateButton.Padding = new Padding(10, 0, 10, 0);
+            _elevateButton.MinimumSize = new Size(160, 42);
+            _elevateButton.Margin = new Padding(0, 4, 10, 4);
             _elevateButton.Visible = !AppInfo.IsAdministrator();
             _elevateButton.Click += delegate (object s, EventArgs e) { _host.RestartAsAdministrator(); };
 
+            buttonRow.Controls.Add(_scanButton);
+            buttonRow.Controls.Add(_reportButton);
+            buttonRow.Controls.Add(_elevateButton);
+
             _progress = new ProgressBar();
-            _progress.Location = new Point(480, 6);
-            _progress.Size = new Size(280, 20);
-            _progress.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            _progress.Dock = DockStyle.Fill;
+            _progress.Height = 20;
+            _progress.Margin = new Padding(0, 4, 0, 2);
 
-            _progressText = new Label();
-            _progressText.Location = new Point(480, 32);
-            _progressText.Size = new Size(300, 18);
-            _progressText.Text = L10n.T("ui.ov.notScanned");
-            _progressText.ForeColor = UiTheme.Muted;
-            _progressText.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            _progressText = UiTheme.StackLabel(L10n.T("ui.ov.notScanned"), UiTheme.Muted);
 
-            top.Controls.Add(_scanButton);
-            top.Controls.Add(_reportButton);
-            top.Controls.Add(_elevateButton);
-            top.Controls.Add(_progress);
-            top.Controls.Add(_progressText);
+            UiTheme.StackAdd(top, buttonRow);
+            UiTheme.StackAdd(top, _progress);
+            UiTheme.StackAdd(top, _progressText);
 
+            // ------------------------------------------------------------ 统计卡片
             var cards = new TableLayoutPanel();
             cards.Dock = DockStyle.Top;
-            cards.Height = 74;
+            cards.Height = 82;
             cards.ColumnCount = 4;
             cards.RowCount = 1;
             cards.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
@@ -86,21 +88,21 @@ namespace HotkeyHound.Ui
             _cardTitles = new Label[4];
             for (int i = 0; i < 4; i++)
             {
-                var box = new Panel();
+                var box = new CardPanel();
                 box.Dock = DockStyle.Fill;
-                box.BorderStyle = BorderStyle.FixedSingle;
                 box.Margin = new Padding(3);
 
                 _cardValues[i] = new Label();
                 _cardValues[i].Text = "—";
                 _cardValues[i].Font = UiTheme.TitleFont(16F);
-                _cardValues[i].Location = new Point(10, 3);
+                _cardValues[i].ForeColor = UiTheme.Accent;
+                _cardValues[i].Location = new Point(12, 8);
                 _cardValues[i].AutoSize = true;
 
                 _cardTitles[i] = new Label();
                 _cardTitles[i].Text = titles[i];
                 _cardTitles[i].ForeColor = UiTheme.Muted;
-                _cardTitles[i].Location = new Point(12, 43);
+                _cardTitles[i].Location = new Point(13, 48);
                 _cardTitles[i].AutoSize = true;
 
                 box.Controls.Add(_cardValues[i]);
@@ -108,12 +110,19 @@ namespace HotkeyHound.Ui
                 cards.Controls.Add(box, i, 0);
             }
 
-            _hint = new Label();
-            _hint.Dock = DockStyle.Top;
-            _hint.Height = 34;
-            _hint.AutoSize = false;
-            _hint.ForeColor = UiTheme.Muted;
-            _hint.Text = L10n.T("ui.ov.hint");
+            // ------------------------------------------------------------ 提示与列表
+            // 提示文字用自动换行的堆栈标签：普通的 Dock=Top+AutoSize 标签不会换行，右端会被窗口裁掉。
+            var hint = UiTheme.StackLabel(L10n.T("ui.ov.hint"), UiTheme.Muted);
+            hint.Padding = new Padding(2, 4, 2, 6);
+            var hintPanel = new TableLayoutPanel();
+            hintPanel.Dock = DockStyle.Top;
+            hintPanel.AutoSize = true;
+            hintPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            hintPanel.ColumnCount = 1;
+            hintPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            hintPanel.RowCount = 1;
+            hintPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            hintPanel.Controls.Add(hint, 0, 0);
 
             _list = new ListView();
             _list.Dock = DockStyle.Fill;
@@ -121,15 +130,17 @@ namespace HotkeyHound.Ui
             _list.FullRowSelect = true;
             _list.GridLines = true;
             _list.HideSelection = false;
-            _list.Columns.Add(L10n.T("ui.col.combo"), 190);
-            _list.Columns.Add(L10n.T("ui.col.state"), 90);
-            _list.Columns.Add(L10n.T("ui.col.owner"), 330);
+            _list.Columns.Add(L10n.T("ui.col.combo"), 170);
+            _list.Columns.Add(L10n.T("ui.col.state"), 80);
+            _list.Columns.Add(L10n.T("ui.col.owner"), 260);
             _list.Columns.Add(L10n.T("ui.col.evidence"), 80);
-            _list.Columns.Add(L10n.T("ui.col.note"), 360);
+            _list.Columns.Add(L10n.T("ui.col.note"), 260);
+            // 备注列吃满剩余宽度：最大化时不再截断、右边不再留白。
+            UiTheme.FillColumn(_list, 4, 240);
             _list.DoubleClick += OnListDoubleClick;
 
             Controls.Add(_list);
-            Controls.Add(_hint);
+            Controls.Add(hintPanel);
             Controls.Add(cards);
             Controls.Add(top);
 

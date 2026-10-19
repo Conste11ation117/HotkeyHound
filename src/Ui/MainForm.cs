@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
@@ -26,7 +26,7 @@ namespace HotkeyHound.Ui
         private HookCheckTab _hookCheckTab;
         private KeyMonitorTab _keyMonitorTab;
         private HookSuspectsTab _hookSuspectsTab;
-        private Panel _banner;
+        private Control _banner;
 
         private readonly AttributionEngine _attribution;
         private readonly HookSniffer _sniffer;
@@ -77,7 +77,19 @@ namespace HotkeyHound.Ui
                 //（Timer 只被局部变量引用时可能在第一次 Tick 前就被回收）。
                 try
                 {
-                    CapturePages(_screenshotDir);
+                    CapturePages(_screenshotDir, "");
+                    // 第二遍：宽屏（模拟最大化）。2.0.0 的列宽自适应/文字换行是否生效，
+                    // 靠这一遍的 PNG 验证：备注列必须吃满剩余宽度，说明文字不许截断。
+                    try
+                    {
+                        ClientSize = UiTheme.ClampToWorkingArea(new Size(1920, 1080), 20);
+                        Application.DoEvents();
+                        CapturePages(_screenshotDir, "-wide");
+                    }
+                    catch (Exception ex)
+                    {
+                        ScreenshotTrace(_screenshotDir, L10n.F("ui.screenshot.captureFailed", ex));
+                    }
                     ScreenshotTrace(_screenshotDir, L10n.T("ui.screenshot.finished"));
                 }
                 catch (Exception ex)
@@ -89,7 +101,7 @@ namespace HotkeyHound.Ui
             });
         }
 
-        private void CapturePages(string dir)
+        private void CapturePages(string dir, string suffix)
         {
             System.IO.Directory.CreateDirectory(dir);
             ScreenshotTrace(dir, L10n.F("ui.screenshot.tabs",
@@ -113,7 +125,7 @@ namespace HotkeyHound.Ui
                 using (var bmp = new Bitmap(w, h))
                 {
                     DrawToBitmap(bmp, new Rectangle(0, 0, w, h));
-                    bmp.Save(System.IO.Path.Combine(dir, names[i] + ".png"), System.Drawing.Imaging.ImageFormat.Png);
+                    bmp.Save(System.IO.Path.Combine(dir, names[i] + suffix + ".png"), System.Drawing.Imaging.ImageFormat.Png);
                 }
                 Log.Write(L10n.F("ui.screenshot.rendered", names[i]));
             }
@@ -255,7 +267,14 @@ namespace HotkeyHound.Ui
 
             _status = new StatusStrip();
             _statusLabel = new ToolStripStatusLabel(L10n.T("ui.status.ready"));
+            var statusSpring = new ToolStripStatusLabel("");
+            statusSpring.Spring = true;
+            var versionLabel = new ToolStripStatusLabel(
+                AppInfo.Title + " v" + AppInfo.Version + " · " + L10n.LangDisplay(L10n.Current));
+            versionLabel.ForeColor = UiTheme.Muted;
             _status.Items.Add(_statusLabel);
+            _status.Items.Add(statusSpring);
+            _status.Items.Add(versionLabel);
 
             _banner = BuildBanner();
 
@@ -275,49 +294,76 @@ namespace HotkeyHound.Ui
             var bar = new ToolStrip();
             bar.GripStyle = ToolStripGripStyle.Hidden;
             bar.Dock = DockStyle.Top;
-            bar.Padding = new Padding(4, 2, 4, 2);
+            bar.Padding = new Padding(8, 3, 8, 3);
+            bar.RenderMode = ToolStripRenderMode.Professional;
+            bar.ImageScalingSize = new Size(20, 20);
+
+            // 页眉：图标 + 标题 + 版本靠左，帮助靠右。v1.3.1 只有一个孤零零的帮助按钮。
+            var titleItem = new ToolStripLabel(AppInfo.Title);
+            titleItem.Font = UiTheme.TitleFont(11F);
+            titleItem.ForeColor = UiTheme.Accent;
+            try
+            {
+                Icon icon = UiTheme.LoadAppIcon();
+                if (icon != null) titleItem.Image = icon.ToBitmap();
+            }
+            catch (Exception) { }
+
+            var versionItem = new ToolStripLabel("v" + AppInfo.Version);
+            versionItem.ForeColor = UiTheme.Muted;
 
             var helpButton = new ToolStripButton(L10n.T("ui.help.button"));
             helpButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
             helpButton.ToolTipText = L10n.T("ui.help.button") + " (F1)";
+            // .NET Framework 的 ToolStripItem 没有 Spring（那是 ToolStripStatusLabel 独有的），
+            // 靠右对齐用 Alignment 实现。
+            helpButton.Alignment = ToolStripItemAlignment.Right;
             helpButton.Click += delegate (object s, EventArgs e) { OpenHelp(); };
+
+            bar.Items.Add(titleItem);
+            bar.Items.Add(versionItem);
             bar.Items.Add(helpButton);
             return bar;
         }
 
-        private Panel BuildBanner()
+        private Control BuildBanner()
         {
             string text = BuildBannerText();
             bool showElevate = !AppInfo.IsAdministrator();
             if (text == null && !showElevate) return null;
 
-            var panel = new Panel();
-            panel.Dock = DockStyle.Top;
-            panel.Height = 60;
-            panel.BackColor = UiTheme.BannerBack;
-            panel.ForeColor = UiTheme.BannerText;
-            panel.Padding = new Padding(10, 6, 10, 6);
+            // 自动高度的两列堆栈：左边说明文字（自动换行，多长都不截断），右边提权按钮。
+            var banner = new TableLayoutPanel();
+            banner.Dock = DockStyle.Top;
+            banner.AutoSize = true;
+            banner.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            banner.BackColor = UiTheme.BannerBack;
+            banner.ForeColor = UiTheme.BannerText;
+            banner.ColumnCount = 2;
+            banner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            banner.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            banner.RowCount = 1;
+            banner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            banner.Padding = new Padding(10, 6, 10, 6);
+            banner.Margin = new Padding(0);
 
-            var label = new Label();
-            label.Text = text ?? "";
-            label.Dock = DockStyle.Fill;
-            label.ForeColor = panel.ForeColor;
-            label.AutoSize = false;
+            var label = UiTheme.StackLabel(text ?? "", UiTheme.BannerText);
             label.TextAlign = ContentAlignment.MiddleLeft;
-            label.Padding = new Padding(2, 0, 8, 0);
+            label.Margin = new Padding(2, 4, 8, 4);
+            banner.Controls.Add(label, 0, 0);
 
-            // 先加 label 再加 button：停靠按「后加入的先贴边」，button 先贴到右侧，label 填充剩余。
-            panel.Controls.Add(label);
             if (showElevate)
             {
                 var elevate = new Button();
                 elevate.Text = L10n.T("ui.banner.elevate");
-                elevate.Dock = DockStyle.Right;
-                elevate.Width = 130;
+                elevate.Size = new Size(140, 34);
+                elevate.Anchor = AnchorStyles.Right;
+                elevate.Margin = new Padding(0, 3, 0, 3);
                 elevate.Click += delegate (object s, EventArgs e) { RestartAsAdministrator(); };
-                panel.Controls.Add(elevate);
+                UiTheme.MarkPrimary(elevate);
+                banner.Controls.Add(elevate, 1, 0);
             }
-            return panel;
+            return banner;
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -428,6 +474,12 @@ namespace HotkeyHound.Ui
         /// <summary>
         /// 以管理员身份重启（只在用户点了按钮时发生）。用 ShellExecuteEx + runas 并保留原命令行参数；
         /// 用户在 UAC 里点「否」时识别为「已取消」，给出清晰反馈而不是抛出异常。
+        ///
+        /// Windows 不允许给运行中的进程原地提权，重启是唯一的提权方式——所以这里要保证重启
+        /// 一定成功交接（2.0.0 修复「点了没反应」）：
+        /// ① 先释放单实例互斥体（否则新实例启动即静默退出）；
+        /// ② 成功后不弹任何模态框，直接 Hide + Close（模态框会把旧进程拖住，拉长交接窗口）；
+        /// ③ 失败/取消时把互斥体拿回来，本实例继续正常运行。
         /// </summary>
         public void RestartAsAdministrator()
         {
@@ -438,14 +490,19 @@ namespace HotkeyHound.Ui
                 return;
             }
 
+            Program.ReleaseSingleInstance();
             bool ok = Elevation.RequestRestart(null);
             if (ok)
             {
-                MessageBox.Show(this, L10n.T("ui.restart.ok"), AppInfo.Title,
-                                MessageBoxButtons.OK, MessageBoxIcon.Information);
+                Log.Write(L10n.T("ui.restart.handoff"));
+                SetStatus(L10n.T("ui.restart.handoff"));
+                try { Hide(); }
+                catch (Exception) { }
                 Close();
                 return;
             }
+
+            Program.ReacquireSingleInstance();
             if (Elevation.LastWasCancelled)
             {
                 MessageBox.Show(this, L10n.T("ui.restart.cancelled"), AppInfo.Title,

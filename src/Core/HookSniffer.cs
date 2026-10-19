@@ -12,7 +12,9 @@ namespace HotkeyHound.Core
         SwallowedUpstream,
         SwallowedBeforeHotkey,
         Delivered,
-        NotGlobal
+        NotGlobal,
+        /// <summary>前提条件缺失（引擎 B 没在监听 / 没跑过扫描），诚实地说「判不了」。</summary>
+        Inconclusive
     }
 
     public sealed class HookCheckRecord
@@ -31,19 +33,26 @@ namespace HotkeyHound.Core
                 case HookVerdict.SwallowedBeforeHotkey: return L10n.T("verdict.swallowedBeforeHotkey");
                 case HookVerdict.Delivered: return L10n.T("verdict.delivered");
                 case HookVerdict.NotGlobal: return L10n.T("verdict.notGlobal");
+                case HookVerdict.Inconclusive: return L10n.T("verdict.inconclusive");
                 default: return L10n.T("verdict.unknown");
             }
         }
     }
 
     /// <summary>
-    /// 引擎 C 的判定规则。写成纯函数，自测可以直接喂事件把四个分支都走一遍，
+    /// 引擎 C 的判定规则。写成纯函数，自测可以直接喂事件把各分支都走一遍，
     /// 不依赖真实按键。
+    ///
+    /// 2.0.0 修正：旧版没有「引擎 B 是否在监听」「引擎 A 占用表是否存在」两个前提，
+    /// 只要用户没先去「按键归属」页点开始监听，任何正常工作的热键都会被判成红色的
+    /// 「疑似被钩子截胡」——这是误报。现在缺前提时诚实地返回 Inconclusive，
+    /// 并在说明里写清缺的是什么、怎么补。
     /// </summary>
     public static class HookVerdictLogic
     {
         public static HookVerdict Decide(bool seenBySniffer, bool occupiedPerEngineA, bool gotAttribution,
-                                         bool timedOut, out string evidence, out string note)
+                                         bool timedOut, bool attributionActive, bool scanDone,
+                                         out string evidence, out string note)
         {
             if (!timedOut)
             {
@@ -61,9 +70,17 @@ namespace HotkeyHound.Core
 
             if (!seenBySniffer)
             {
+                // LL 钩子根本没看到 → 上游截胡。这个结论不依赖引擎 B。
                 evidence = L10n.T("verdictLogic.swallowedUpstream.evidence");
                 note = L10n.T("verdictLogic.swallowedUpstream.note");
                 return HookVerdict.SwallowedUpstream;
+            }
+
+            if (!scanDone)
+            {
+                evidence = L10n.T("verdictLogic.inconclusiveNoScan.evidence");
+                note = L10n.T("verdictLogic.inconclusiveNoScan.note");
+                return HookVerdict.Inconclusive;
             }
 
             if (!occupiedPerEngineA)
@@ -71,6 +88,14 @@ namespace HotkeyHound.Core
                 evidence = L10n.T("verdictLogic.notGlobal.evidence");
                 note = L10n.T("verdictLogic.notGlobal.note");
                 return HookVerdict.NotGlobal;
+            }
+
+            if (!attributionActive)
+            {
+                // 没有归属报告可能只是因为引擎 B 没在监听——不能据此说「被截胡」。
+                evidence = L10n.T("verdictLogic.inconclusiveNoB.evidence");
+                note = L10n.T("verdictLogic.inconclusiveNoB.note");
+                return HookVerdict.Inconclusive;
             }
 
             evidence = L10n.T("verdictLogic.beforeHotkey.evidence");
@@ -91,6 +116,10 @@ namespace HotkeyHound.Core
         public AttributionRecord Attribution;
         public bool LateAttribution;
         public bool OccupiedPerEngineA;
+        /// <summary>结算时引擎 B 是否在监听（决定「无归属报告」能否推出「被截胡」）。</summary>
+        public bool AttributionActive;
+        /// <summary>结算时引擎 A 的占用表是否可用（没扫描过 → 无法判「不是全局热键」）。</summary>
+        public bool ScanDone;
         public HookVerdict Verdict = HookVerdict.Unknown;
         public string Evidence;
         public string Note;
@@ -171,6 +200,12 @@ namespace HotkeyHound.Core
 
         /// <summary>引擎 A 的占用表查询；没设置时按「未占用」处理。</summary>
         public Func<KeyCombo, bool> IsOccupiedByEngineA { get; set; }
+
+        /// <summary>引擎 B（按键归属）当前是否在监听；没设置时按「未监听」处理（判定会诚实降级为无法判定）。</summary>
+        public Func<bool> AttributionActive { get; set; }
+
+        /// <summary>引擎 A 的占用表是否可用（跑过扫描）；没设置时按「不可用」处理。</summary>
+        public Func<bool> ScanDone { get; set; }
 
         public string LastError { get; private set; }
         public bool IsRunning { get { return _thread != null && _thread.IsAlive; } }
@@ -257,19 +292,43 @@ namespace HotkeyHound.Core
             }
             catch (Exception) { }
 
-            if (_threadId != 0)
-            {
-                try { NativeMethods.PostThreadMessageW(_threadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero); }
-                catch (Exception) { }
-            }
             Thread t = _thread;
+            uint tid = _threadId;
+
+            // PostThreadMessageW 在线程还没创建消息队列时会失败（WM_QUIT 丢失 → 线程永远阻塞在
+            // GetMessageW 里 → 4 秒 Join 超时 + 钩子泄漏）。所以：只对活着的线程发，失败就重试，
+            // Join 超时后再补发一轮。
+            if (t != null && tid != 0) PostQuitWithRetry(t, tid, 600);
+
             if (t != null)
             {
-                try { if (!t.Join(4000)) Say(L10n.T("sniff.threadJoinTimeout")); }
+                try
+                {
+                    if (!t.Join(4000))
+                    {
+                        if (tid != 0) PostQuitWithRetry(t, tid, 600);
+                        if (!t.Join(1500)) Say(L10n.T("sniff.threadJoinTimeout"));
+                    }
+                }
                 catch (Exception) { }
             }
             _thread = null;
+            _threadId = 0;
             _ready = false;
+        }
+
+        private static void PostQuitWithRetry(Thread t, uint tid, int budgetMs)
+        {
+            DateTime deadline = DateTime.Now.AddMilliseconds(budgetMs);
+            while (t.IsAlive && DateTime.Now < deadline)
+            {
+                try
+                {
+                    if (NativeMethods.PostThreadMessageW(tid, WM_QUIT, IntPtr.Zero, IntPtr.Zero)) return;
+                }
+                catch (Exception) { return; }
+                Thread.Sleep(40);
+            }
         }
 
         public void Dispose()
@@ -310,6 +369,9 @@ namespace HotkeyHound.Core
             finally
             {
                 _ready = false;
+                // 线程 ID 会被系统回收复用；不清零的话，下一次 Stop() 可能把 WM_QUIT
+                // 发到一个无关线程上，把别人的消息循环干掉。
+                _threadId = 0;
                 try
                 {
                     if (_hook != IntPtr.Zero)
@@ -460,13 +522,22 @@ namespace HotkeyHound.Core
         private void OnTick(object state)
         {
             ProbeSession s;
-            lock (_gate) s = _session;
-            if (s == null || s.Settled) return;
-            if (DateTime.Now < s.Deadline) return;
+            lock (_gate)
+            {
+                s = _session;
+                if (s == null || s.Settled) return;
+                if (DateTime.Now < s.Deadline) return;
+                // 先在锁里占住结算权：Timer 回调在线程池上，可能有两个 tick 同时到期，
+                // 旧实现会让同一个布防结算两次、报两条结论。
+                s.Settled = true;
+            }
+
+            bool attributionActive = SafeFlag(delegate () { return AttributionActive != null && AttributionActive(); });
+            bool scanDone = SafeFlag(delegate () { return ScanDone != null && ScanDone(); });
 
             string evidence, note;
             HookVerdict verdict = HookVerdictLogic.Decide(s.Seen, s.OccupiedPerEngineA, s.GotAttribution, true,
-                                                          out evidence, out note);
+                                                          attributionActive, scanDone, out evidence, out note);
             if (s.LateAttribution)
             {
                 note += L10n.F("verdictLogic.late", s.Attribution.ProcessName, AttributionWindow.TotalSeconds);
@@ -481,12 +552,13 @@ namespace HotkeyHound.Core
 
             lock (_gate)
             {
-                s.Settled = true;
                 s.Verdict = verdict;
                 s.Evidence = evidence;
                 s.Note = note;
+                s.AttributionActive = attributionActive;
+                s.ScanDone = scanDone;
                 _records.Add(record);
-                    if (_records.Count > MaxRecords) _records.RemoveRange(0, _records.Count - MaxRecords);
+                if (_records.Count > MaxRecords) _records.RemoveRange(0, _records.Count - MaxRecords);
             }
 
             Say(L10n.F("sniffer.verdict.log", s.Combo.Display(), HookCheckRecord.VerdictName(verdict)));
@@ -497,6 +569,12 @@ namespace HotkeyHound.Core
                 try { h(record); }
                 catch (Exception) { }
             }
+        }
+
+        private static bool SafeFlag(Func<bool> eval)
+        {
+            try { return eval(); }
+            catch (Exception) { return false; }
         }
 
         /// <summary>提前结算当前布防（不改判定，只是立刻走一次结算）。</summary>

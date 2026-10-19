@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en-US">
 <head>
 <meta charset="utf-8">
@@ -61,16 +61,20 @@ PowerToys run as admin) are invisible.</div>
 
 <h3>Engine C &mdash; hook interception detection (installs a hook)</h3>
 <p>It installs a low-level keyboard hook <code>WH_KEYBOARD_LL</code> to observe whether keys reach the system.
-Combined with engine A's occupancy table and engine B's reports, it gives one of four verdicts:</p>
+Combined with engine A's occupancy table and engine B's reports, it gives a verdict; when a prerequisite is
+missing it honestly reports Inconclusive instead of guessing:</p>
 <table>
   <tr><th>Verdict</th><th>Meaning</th></tr>
   <tr><td>Delivered normally</td><td>The key reached the system and a clear attribution report arrived</td></tr>
-  <tr><td>Likely intercepted</td><td>The key reached the system but the owner did not get the command</td></tr>
+  <tr><td>Likely intercepted</td><td>The key reached the system and engine B was listening, but the owner did not get the command</td></tr>
   <tr><td>Swallowed upstream</td><td>This program's hook never saw the key &mdash; an upstream hook swallowed it</td></tr>
   <tr><td>Not a global hotkey</td><td>Seen, but engine A does not list it &mdash; only the current window handles it</td></tr>
+  <tr><td>Inconclusive (prerequisite missing)</td><td>Engine B was not listening, or engine A has not scanned &mdash; not enough evidence, no claim is made</td></tr>
 </table>
 <p>Use: on the Hook detection page, enter a combination and click Arm (install hook) (<b>only then is the hook
-installed</b>), immediately press the key, and read the verdict. <b>This page only observes; it never swallows or
+installed</b>). If engine B is not running yet, one confirmation dialog offers to start it along with the sniffer
+(without engine B, "intercepted" cannot be proven). Then immediately press the key and read the verdict.
+<b>This page only observes; it never swallows or
 alters keys, and never ends or pauses any process.</b></p>
 
 <h3>Engine D &mdash; config aggregation (read-only, no admin needed)</h3>

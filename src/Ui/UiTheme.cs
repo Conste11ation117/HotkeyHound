@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -243,6 +243,133 @@ namespace HotkeyHound.Ui
             button.Tag = "primary";
         }
 
+        // ------------------------------------------------------------------ 布局助手（2.0.0）
+        // 目标只有一个：任何窗口宽度、任何语言下，文字都不许被截断。
+        // 顶部说明区一律用「垂直堆栈 + AutoSize 行」，换行文本自动撑高；
+        // 列表的最后一列吃掉剩余宽度，最大化时不再左边截断、右边留白。
+
+        /// <summary>垂直堆栈容器：Dock=Top、整体自动增高，逐行 AutoSize。</summary>
+        public static TableLayoutPanel NewStack()
+        {
+            var tlp = new TableLayoutPanel();
+            tlp.Dock = DockStyle.Top;
+            tlp.AutoSize = true;
+            tlp.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            tlp.ColumnCount = 1;
+            tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlp.RowCount = 0;
+            tlp.Padding = new Padding(0, 4, 0, 6);
+            tlp.Margin = new Padding(0);
+            // 透明底：容器的默认底色比页面浅，会在按钮右侧露出一块白框。
+            try { tlp.BackColor = Color.Transparent; }
+            catch (Exception) { }
+            return tlp;
+        }
+
+        /// <summary>往堆栈里追加一行（AutoSize），并放入控件。</summary>
+        public static void StackAdd(TableLayoutPanel stack, Control child)
+        {
+            if (stack == null || child == null) return;
+            stack.RowCount++;
+            stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.Controls.Add(child, 0, stack.RowCount - 1);
+        }
+
+        /// <summary>会自动换行的说明标签：配合 NewStack/StackAdd，在行内按实际宽度换行、行高自动增长。</summary>
+        public static Label StackLabel(string text, Color fore)
+        {
+            var label = new Label();
+            label.Text = text ?? "";
+            label.AutoSize = true;
+            label.Dock = DockStyle.Fill;
+            label.ForeColor = fore;
+            label.Margin = new Padding(0, 2, 0, 2);
+            return label;
+        }
+
+        /// <summary>水平按钮行：自动高度，窗口太窄时自动折行，按钮永远完整可见。</summary>
+        public static FlowLayoutPanel NewFlowRow()
+        {
+            var flow = new FlowLayoutPanel();
+            flow.AutoSize = true;
+            flow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            flow.Dock = DockStyle.Fill;
+            flow.WrapContents = true;
+            flow.FlowDirection = FlowDirection.LeftToRight;
+            flow.Margin = new Padding(0);
+            flow.Padding = new Padding(0);
+            // 透明底：否则按钮行右侧会露出一块比页面更浅的底色。
+            try { flow.BackColor = Color.Transparent; }
+            catch (Exception) { }
+            return flow;
+        }
+
+        /// <summary>
+        /// 让 ListView 的指定列吃掉全部剩余宽度（并随窗口缩放实时重算）。
+        /// 修的就是「最大化时备注列还是 360px、内容截断、右边大片空白」这个问题。
+        /// </summary>
+        public static void FillColumn(ListView list, int index, int minWidth)
+        {
+            if (list == null || index < 0) return;
+            EventHandler fit = delegate (object s, EventArgs e)
+            {
+                try
+                {
+                    if (list.IsDisposed || list.Columns.Count <= index) return;
+                    if (!list.IsHandleCreated || list.ClientSize.Width <= 0) return;
+                    int used = 0;
+                    for (int i = 0; i < list.Columns.Count; i++)
+                    {
+                        if (i != index) used += list.Columns[i].Width;
+                    }
+                    int avail = list.ClientSize.Width - used - SystemInformation.VerticalScrollBarWidth - 4;
+                    list.Columns[index].Width = Math.Max(minWidth, avail);
+                }
+                catch (Exception) { }
+            };
+            list.Resize += fit;
+            list.HandleCreated += fit;
+            fit(null, null);
+        }
+
+        /// <summary>ListView/ListBox 双缓冲：几千行滚动刷新不再闪烁（反射打开受保护属性）。</summary>
+        public static void EnableDoubleBuffer(Control control)
+        {
+            try
+            {
+                System.Reflection.PropertyInfo prop = typeof(Control).GetProperty("DoubleBuffered",
+                    System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+                if (prop != null) prop.SetValue(control, true, null);
+            }
+            catch (Exception) { }
+        }
+
+        /// <summary>
+        /// 非堆栈场景的换行标签自动高度：按当前宽度实测换行后的文本高度并重设 Height，
+        /// 用于 banner、报告页等绝对定位的长文本标签。
+        /// </summary>
+        public static void AutoWrapHeight(Label label, int minHeight)
+        {
+            if (label == null) return;
+            label.AutoSize = false;
+            EventHandler adjust = delegate (object s, EventArgs e)
+            {
+                try
+                {
+                    if (label.IsDisposed || label.Width <= 0 || string.IsNullOrEmpty(label.Text)) return;
+                    Size sz = TextRenderer.MeasureText(label.Text, label.Font,
+                        new Size(label.Width, int.MaxValue),
+                        TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.TextBoxControl);
+                    int h = Math.Max(minHeight, sz.Height + 4);
+                    if (label.Height != h) label.Height = h;
+                }
+                catch (Exception) { }
+            };
+            label.Resize += adjust;
+            label.TextChanged += adjust;
+            adjust(null, null);
+        }
+
         // ------------------------------------------------------------------ 应用配色
 
         /// <summary>递归套用调色板。页面里显式设置的语义色（成功/警告/错误）会被保留。</summary>
@@ -257,7 +384,12 @@ namespace HotkeyHound.Ui
         {
             try
             {
-                if (c is Form || c is UserControl || c is TabPage || c is SplitContainer || c is Panel)
+                if (c is CardPanel)
+                {
+                    // 卡片自己画 Surface 底 + 圆角边框；BackColor 参与子控件的透明模拟，不许覆盖。
+                    c.ForeColor = Text;
+                }
+                else if (c is Form || c is UserControl || c is TabPage || c is SplitContainer || c is Panel)
                 {
                     c.BackColor = c is GroupBox ? Surface : Background;
                     c.ForeColor = Text;
@@ -278,6 +410,7 @@ namespace HotkeyHound.Ui
                     c.ForeColor = Text;
                     if (c is ComboBox) ((ComboBox)c).FlatStyle = FlatStyle.Flat;
                     if (c is TextBox) ((TextBox)c).BorderStyle = BorderStyle.FixedSingle;
+                    if (c is ListView) EnableDoubleBuffer(c);
                     TryDarkNative(c);
                 }
                 else if (c is Button)
@@ -302,7 +435,10 @@ namespace HotkeyHound.Ui
                     status.BackColor = SurfaceAlt;
                     status.ForeColor = Text;
                     status.SizingGrip = false;
-                    foreach (ToolStripItem item in status.Items) item.ForeColor = Text;
+                    foreach (ToolStripItem item in status.Items)
+                    {
+                        if (IsDefaultForeColor(item.ForeColor)) item.ForeColor = Text;
+                    }
                 }
                 else if (c is ToolStrip)
                 {
@@ -310,7 +446,10 @@ namespace HotkeyHound.Ui
                     strip.BackColor = SurfaceAlt;
                     strip.ForeColor = Text;
                     strip.RenderMode = ToolStripRenderMode.System;
-                    foreach (ToolStripItem item in strip.Items) item.ForeColor = Text;
+                    foreach (ToolStripItem item in strip.Items)
+                    {
+                        if (IsDefaultForeColor(item.ForeColor)) item.ForeColor = Text;
+                    }
                 }
                 else if (c is ProgressBar)
                 {

@@ -4,6 +4,67 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0-pre] — 2026-10-19 Interface honesty
+
+Three user-visible defects fixed: Engine C cried "swallowed" when it could not possibly know, the
+"Restart as administrator" button silently did nothing, and text was clipped all over the UI —
+including the remark columns when maximized. Also new in this release: a first-run language picker,
+a rewritten README, and self-tests that no longer assume the developer's machine.
+
+### Fixed: Engine C false alarms
+
+- **Verdicts asserted what the prerequisites could not support.** "Swallowed before the hotkey" was
+  reported even when Engine B was not listening — with no attribution channel, an occupied key that the
+  sniffer saw but that produced no hotkey firing *looks* swallowed. `HookVerdictLogic.Decide` now takes
+  two prerequisites (`attributionActive`, `scanDone`) and returns a new **Inconclusive** verdict naming
+  the missing prerequisite instead of guessing. Arming while Engine B is off asks once for consent to
+  co-start it (still one explicit user action; no hook is ever installed silently).
+- **`Stop()` could leak the hook thread and wedge the page.** `WM_QUIT` posted before the thread created
+  its message queue was simply lost. The post is now retried until the thread exits, re-posted once more
+  after a join timeout, and a final failure is logged instead of leaving a zombie. The thread id is
+  cleared on exit, so a stale id can never post quit into an unrelated thread.
+
+### Fixed: "Restart as administrator" never restarted
+
+- The old instance still held the single-instance mutex while it showed a *modal* "we are restarting"
+  dialog, so the elevated process saw "already running" and exited without a window. The mutex is now
+  released **before** handing off, reacquired if the user cancels or elevation fails, and a successful
+  handoff shows no modal at all (log line, hide, close).
+- `BringExistingToFront` searched for an exact window title, but the real title is formatted
+  ("HotkeyHound — ..."), so it never matched: it now enumerates top-level windows by title prefix.
+- A second launch waits up to 1.5 s for an abandoned mutex before concluding another instance is alive.
+
+### Fixed: text truncation and UI polish
+
+- The last text column of every list (remark / path / evidence / description) now stretches to the
+  remaining width on resize in all five tabs; previously maximized windows wasted most of their width.
+- Tab header areas use auto-wrapping stacks instead of fixed-height labels — long hints no longer clip
+  at any window width.
+- Key-monitor verdict and stuck-modifier cards grow with their text; the report page's release note and
+  known-limitations blocks wrap to the actual window width and no longer overlap each other.
+- Toolbar now carries the app icon, title and version with right-aligned help; the status bar shows
+  version and language; ListViews are double-buffered (no drag flicker); overview counters sit on
+  rounded cards; primary actions are visually emphasized.
+- `--screenshot` mode captures every page at both 1080x720 and 1920x1080 (files suffixed `-wide`).
+
+### Added
+
+- **First-run language picker.** On the first launch (no `settings.ini` yet) the application asks for
+  the interface language before it builds the main window, defaulting to **English**; the choice is
+  written to `%LOCALAPPDATA%\HotkeyHound\settings.ini` and can be changed later on the Report & About
+  page. Command-line modes and screenshot mode never show it.
+- **README rewritten around what you see and click**: a 30-second start, a symptom → page → button →
+  result table, and a page-by-page summary, before the engine/comparison material.
+
+### Tests
+
+- Self-test T7 now walks all seven verdict branches, including the two prerequisite-missing ones that
+  must yield Inconclusive.
+- **T3 and T4 no longer assume PowerToys is installed.** T3 now parses a synthetic Keyboard Manager
+  document on every machine (it verifies the parser itself) and only cross-checks the real config when
+  one exists; on a machine without PowerToys the test is reported as Inconclusive instead of failed.
+  T4 skips the "declared must match the truth table" assertion when no adapter source is present.
+
 ## [1.3.1] — 2026-10-19 Hardening
 
 An adversarial audit of the two layers a normal test cannot reach — the injected native DLL and the

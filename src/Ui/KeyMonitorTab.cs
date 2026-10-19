@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
@@ -11,6 +11,8 @@ namespace HotkeyHound.Ui
     /// 第 7 页：按键监视。
     /// 铁律：本页加载时绝不安装任何钩子——KeyMonitor.Start() 只在用户点「开始监视」时调用，
     /// 「停止监视」立刻 UnhookWindowsHookEx 并注销 Raw Input。本页只观察，不吞键、不结束进程。
+    /// 2.0.0：顶部说明区改为自动换行堆栈；判定卡片与修饰键卡片改垂直堆栈，长文本不再被固定高度截断；
+    /// 「说明」列吃满剩余宽度；列表开双缓冲。
     /// </summary>
     public sealed class KeyMonitorTab : UserControl
     {
@@ -44,67 +46,59 @@ namespace HotkeyHound.Ui
             _monitor.VerdictReady += OnVerdictReady;
             _monitor.ModifiersChanged += OnModifiersChanged;
 
-            var top = new Panel();
-            top.Dock = DockStyle.Top;
-            top.Height = 142;
+            // ------------------------------------------------------------ 顶部：自动换行堆栈
+            var top = UiTheme.NewStack();
 
             var title = new Label();
             title.Text = L10n.T("ui.km.title");
             title.Font = UiTheme.TitleFont(11F);
-            title.Location = new Point(0, 4);
             title.AutoSize = true;
+            title.Margin = new Padding(0, 2, 0, 2);
 
-            var hint = new Label();
-            hint.Location = new Point(2, 30);
-            hint.Size = new Size(100, 44);
-            hint.AutoSize = false;
-            hint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            hint.ForeColor = UiTheme.Muted;
-            hint.Text = L10n.T("ui.km.hint");
+            var hint = UiTheme.StackLabel(L10n.T("ui.km.hint"), UiTheme.Muted);
+
+            _status = UiTheme.StackLabel(L10n.T("ui.km.notStarted"), UiTheme.Muted);
+
+            var buttonRow = UiTheme.NewFlowRow();
 
             _startButton = new Button();
             _startButton.Text = L10n.T("ui.km.start");
             _startButton.Font = UiTheme.TitleFont(9.5F);
-            _startButton.Size = new Size(300, 34);
-            _startButton.Location = new Point(0, 104);
+            _startButton.Size = new Size(300, 36);
+            _startButton.Margin = new Padding(0, 2, 10, 2);
             _startButton.Click += OnStartClick;
             UiTheme.MarkPrimary(_startButton);
 
             _stopButton = new Button();
             _stopButton.Text = L10n.T("ui.km.stop");
-            _stopButton.Size = new Size(200, 34);
-            _stopButton.Location = new Point(308, 104);
+            _stopButton.Size = new Size(200, 36);
+            _stopButton.Margin = new Padding(0, 2, 10, 2);
             _stopButton.Enabled = false;
             _stopButton.Click += OnStopClick;
 
             _clearButton = new Button();
             _clearButton.Text = L10n.T("ui.km.clear");
-            _clearButton.Size = new Size(72, 34);
-            _clearButton.Location = new Point(516, 104);
+            _clearButton.Size = new Size(96, 36);
+            _clearButton.Margin = new Padding(0, 2, 10, 2);
             _clearButton.Click += OnClearClick;
 
             _refreshButton = new Button();
             _refreshButton.Text = L10n.T("ui.km.refresh");
-            _refreshButton.Size = new Size(130, 34);
-            _refreshButton.Location = new Point(596, 104);
+            _refreshButton.Size = new Size(140, 36);
+            _refreshButton.Margin = new Padding(0, 2, 0, 2);
             _refreshButton.Click += delegate (object s, EventArgs e) { RefreshReadOnly(); };
 
-            _status = new Label();
-            _status.Location = new Point(2, 78);
-            _status.Size = new Size(100, 20);
-            _status.AutoSize = false;
-            _status.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            _status.ForeColor = UiTheme.Muted;
-            _status.Text = L10n.T("ui.km.notStarted");
+            buttonRow.Controls.Add(_startButton);
+            buttonRow.Controls.Add(_stopButton);
+            buttonRow.Controls.Add(_clearButton);
+            buttonRow.Controls.Add(_refreshButton);
 
-            top.Controls.Add(title);
-            top.Controls.Add(hint);
-            top.Controls.Add(_startButton);
-            top.Controls.Add(_stopButton);
-            top.Controls.Add(_clearButton);
-            top.Controls.Add(_refreshButton);
-            top.Controls.Add(_status);
+            UiTheme.StackAdd(top, title);
+            UiTheme.StackAdd(top, hint);
+            UiTheme.StackAdd(top, _status);
+            UiTheme.StackAdd(top, buttonRow);
 
+            // ------------------------------------------------------------ 事件列表
             _events = new ListView();
             _events.Dock = DockStyle.Fill;
             _events.View = View.Details;
@@ -117,10 +111,14 @@ namespace HotkeyHound.Ui
             _events.Columns.Add(L10n.T("ui.km.col.scancode"), 90);
             _events.Columns.Add(L10n.T("ui.km.col.flags"), 160);
             _events.Columns.Add(L10n.T("ui.km.col.desc"), 360);
+            // 说明列吃满剩余宽度（2.0.0：修最大化时截断）。
+            UiTheme.FillColumn(_events, 5, 220);
 
+            // 事件列表与详情区：详情区贴底，高度按「页面高度 - 顶部说明高度 - 事件列表最小高度」算，
+            // 保证任何窗口尺寸下两边都看得见、不会互相压住。
             var details = new SplitContainer();
             details.Dock = DockStyle.Bottom;
-            details.Height = 230;
+            details.Height = 240;
             details.Orientation = Orientation.Vertical;
             details.FixedPanel = FixedPanel.Panel1;
             // 构造时容器还没实际宽度，不能设置大的 MinSize / SplitterDistance（会抛异常）。
@@ -140,6 +138,21 @@ namespace HotkeyHound.Ui
             details.Panel1.Controls.Add(BuildVerdictPanel());
             details.Panel2.Controls.Add(BuildReadOnlyPanel());
 
+            SizeChanged += delegate (object s, EventArgs e)
+            {
+                try
+                {
+                    int topHeight = top.Height;
+                    int avail = ClientSize.Height - topHeight;
+                    int h = avail - 130;
+                    if (h < 200) h = 200;
+                    if (h > 420) h = 420;
+                    if (avail - h < 90) h = Math.Max(120, avail - 90);
+                    if (details.Height != h) details.Height = h;
+                }
+                catch (Exception) { }
+            };
+
             Controls.Add(_events);
             Controls.Add(details);
             Controls.Add(top);
@@ -153,72 +166,84 @@ namespace HotkeyHound.Ui
 
         private Control BuildVerdictPanel()
         {
-            var card = new Panel();
-            card.Dock = DockStyle.Fill;
-            card.BorderStyle = BorderStyle.FixedSingle;
-            card.Padding = new Padding(UiTheme.SpaceS);
+            // 卡片按内容自动增高，修饰键框吃掉剩余高度——判定文字再长也不会被裁掉，
+            // 也不会压到下面的框里。整块放进可滚动面板：窗口太矮时滚动查看，而不是被切掉。
+            var host = new Panel();
+            host.Dock = DockStyle.Fill;
+            host.AutoScroll = true;
+
+            var layout = new TableLayoutPanel();
+            layout.Dock = DockStyle.Top;
+            layout.AutoSize = true;
+            layout.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            layout.ColumnCount = 1;
+            layout.RowCount = 2;
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            var card = new CardPanel();
+            card.Dock = DockStyle.Top;
+            card.AutoSize = true;
+            card.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             card.Margin = new Padding(0, 0, 0, 4);
 
+            var stack = new TableLayoutPanel();
+            stack.Dock = DockStyle.Top;
+            stack.AutoSize = true;
+            stack.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            stack.BackColor = Color.Transparent;
+            stack.ColumnCount = 1;
+            stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            stack.RowCount = 5;
+            for (int i = 0; i < 5; i++) stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.Padding = new Padding(UiTheme.SpaceS);
+
             _verdictTitle = new Label();
+            _verdictTitle.AutoSize = true;
             _verdictTitle.Dock = DockStyle.Top;
-            _verdictTitle.Height = 26;
-            _verdictTitle.AutoSize = false;
+            _verdictTitle.Margin = new Padding(0, 0, 0, 4);
             _verdictTitle.Font = UiTheme.TitleFont(12F);
             _verdictTitle.Text = L10n.T("ui.km.verdict.title");
 
-            _verdictKey = new Label();
-            _verdictKey.Dock = DockStyle.Top;
-            _verdictKey.Height = 22;
-            _verdictKey.AutoSize = false;
+            _verdictKey = UiTheme.StackLabel("", UiTheme.Text);
+            _verdictLayers = UiTheme.StackLabel("", UiTheme.Muted);
+            _verdictEvidence = UiTheme.StackLabel("", UiTheme.Muted);
+            _verdictNote = UiTheme.StackLabel("", UiTheme.Text);
 
-            _verdictLayers = new Label();
-            _verdictLayers.Dock = DockStyle.Top;
-            _verdictLayers.Height = 20;
-            _verdictLayers.AutoSize = false;
-
-            _verdictEvidence = new Label();
-            _verdictEvidence.Dock = DockStyle.Top;
-            _verdictEvidence.Height = 32;
-            _verdictEvidence.AutoSize = false;
-
-            _verdictNote = new Label();
-            _verdictNote.Dock = DockStyle.Fill;
-            _verdictNote.AutoSize = false;
-
-            card.Controls.Add(_verdictNote);
-            card.Controls.Add(_verdictEvidence);
-            card.Controls.Add(_verdictLayers);
-            card.Controls.Add(_verdictKey);
-            card.Controls.Add(_verdictTitle);
+            stack.Controls.Add(_verdictTitle, 0, 0);
+            stack.Controls.Add(_verdictKey, 0, 1);
+            stack.Controls.Add(_verdictLayers, 0, 2);
+            stack.Controls.Add(_verdictEvidence, 0, 3);
+            stack.Controls.Add(_verdictNote, 0, 4);
+            card.Controls.Add(stack);
 
             var modBox = new GroupBox();
             modBox.Dock = DockStyle.Fill;
             modBox.Margin = new Padding(0);
             modBox.Text = L10n.T("ui.km.mod.title");
+            modBox.MinimumSize = new Size(0, 96);
             modBox.Padding = new Padding(UiTheme.SpaceS);
 
-            _modStatus = new Label();
-            _modStatus.Dock = DockStyle.Top;
-            _modStatus.Height = 20;
-            _modStatus.AutoSize = false;
+            var modStack = new TableLayoutPanel();
+            modStack.Dock = DockStyle.Fill;
+            modStack.BackColor = Color.Transparent;
+            modStack.ColumnCount = 1;
+            modStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            modStack.RowCount = 2;
+            modStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            modStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            _modNote = new Label();
-            _modNote.Dock = DockStyle.Fill;
-            _modNote.AutoSize = false;
-            _modNote.ForeColor = UiTheme.Muted;
-            _modNote.Text = L10n.T("ui.km.mod.note");
-            modBox.Controls.Add(_modNote);
-            modBox.Controls.Add(_modStatus);
+            _modStatus = UiTheme.StackLabel("", UiTheme.Muted);
+            _modNote = UiTheme.StackLabel(L10n.T("ui.km.mod.note"), UiTheme.Muted);
 
-            var layout = new TableLayoutPanel();
-            layout.Dock = DockStyle.Fill;
-            layout.ColumnCount = 1;
-            layout.RowCount = 2;
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 64F));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 36F));
+            modStack.Controls.Add(_modStatus, 0, 0);
+            modStack.Controls.Add(_modNote, 0, 1);
+            modBox.Controls.Add(modStack);
+
             layout.Controls.Add(card, 0, 0);
             layout.Controls.Add(modBox, 0, 1);
-            return layout;
+            host.Controls.Add(layout);
+            return host;
         }
 
         private Control BuildReadOnlyPanel()
@@ -253,6 +278,7 @@ namespace HotkeyHound.Ui
             _remap.Columns.Add(L10n.T("ui.km.remap.input"), 170);
             _remap.Columns.Add(L10n.T("ui.km.remap.output"), 170);
             _remap.Columns.Add(L10n.T("ui.km.col.scancode"), 120);
+            UiTheme.FillColumn(_remap, 2, 90);
             remapBox.Controls.Add(_remap);
 
             var driverBox = new GroupBox();
@@ -263,6 +289,7 @@ namespace HotkeyHound.Ui
             _drivers = new ListBox();
             _drivers.Dock = DockStyle.Fill;
             _drivers.IntegralHeight = false;
+            UiTheme.EnableDoubleBuffer(_drivers);
             driverBox.Controls.Add(_drivers);
 
             split.Panel1.Controls.Add(remapBox);

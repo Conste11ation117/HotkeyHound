@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -17,7 +17,6 @@ namespace HotkeyHound.Ui
         private readonly ComboBox _filter;
         private readonly ListView _list;
         private readonly Label _counter;
-        private readonly Button _openButton;
         private readonly string _allLevels;
 
         public HookSuspectsTab(MainForm host)
@@ -25,28 +24,22 @@ namespace HotkeyHound.Ui
             _host = host;
             _allLevels = L10n.T("ui.hs.filter.all");
 
-            var top = new Panel();
-            top.Dock = DockStyle.Top;
-            top.Height = 132;
+            var top = UiTheme.NewStack();
 
             var title = new Label();
             title.Text = L10n.T("ui.hs.title");
             title.Font = UiTheme.TitleFont(11F);
-            title.Location = new Point(0, 4);
             title.AutoSize = true;
+            title.Margin = new Padding(0, 2, 0, 2);
 
-            var hint = new Label();
-            hint.Location = new Point(2, 30);
-            hint.Size = new Size(100, 56);
-            hint.AutoSize = false;
-            hint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            hint.ForeColor = UiTheme.Muted;
-            hint.Text = L10n.T("ui.hs.hint") + "\r\n" + L10n.T("ui.hs.levels");
+            var hint = UiTheme.StackLabel(L10n.T("ui.hs.hint") + "\r\n" + L10n.T("ui.hs.levels"), UiTheme.Muted);
+
+            var filterRow = UiTheme.NewFlowRow();
 
             _filter = new ComboBox();
             _filter.DropDownStyle = ComboBoxStyle.DropDownList;
-            _filter.Location = new Point(0, 96);
-            _filter.Width = 200;
+            _filter.Width = 220;
+            _filter.Margin = new Padding(0, 4, 12, 4);
             _filter.Items.Add(_allLevels);
             foreach (HookEvidence ev in new HookEvidence[]
             {
@@ -60,21 +53,24 @@ namespace HotkeyHound.Ui
             _filter.SelectedIndexChanged += delegate (object s, EventArgs e) { Rebuild(); };
 
             _counter = new Label();
-            _counter.Location = new Point(212, 100);
             _counter.AutoSize = true;
+            _counter.Anchor = AnchorStyles.None;
+            _counter.Margin = new Padding(0, 8, 16, 0);
             _counter.ForeColor = UiTheme.Muted;
 
-            _openButton = new Button();
-            _openButton.Text = L10n.T("ui.hs.openConfig");
-            _openButton.Location = new Point(360, 92);
-            _openButton.Size = new Size(170, 28);
-            _openButton.Click += delegate (object s, EventArgs e) { OpenSelectedConfig(); };
+            var openButton = new Button();
+            openButton.Text = L10n.T("ui.hs.openConfig");
+            openButton.Size = new Size(180, 30);
+            openButton.Margin = new Padding(0, 3, 0, 3);
+            openButton.Click += delegate (object s, EventArgs e) { OpenSelectedConfig(); };
 
-            top.Controls.Add(title);
-            top.Controls.Add(hint);
-            top.Controls.Add(_filter);
-            top.Controls.Add(_counter);
-            top.Controls.Add(_openButton);
+            filterRow.Controls.Add(_filter);
+            filterRow.Controls.Add(_counter);
+            filterRow.Controls.Add(openButton);
+
+            UiTheme.StackAdd(top, title);
+            UiTheme.StackAdd(top, hint);
+            UiTheme.StackAdd(top, filterRow);
 
             _list = new ListView();
             _list.Dock = DockStyle.Fill;
@@ -82,14 +78,16 @@ namespace HotkeyHound.Ui
             _list.FullRowSelect = true;
             _list.GridLines = true;
             _list.HideSelection = false;
-            _list.Columns.Add(L10n.T("ui.col.combo"), 160);
-            _list.Columns.Add(L10n.T("ui.hs.col.software"), 140);
-            _list.Columns.Add(L10n.T("ui.hs.col.module"), 130);
-            _list.Columns.Add(L10n.T("ui.col.evidence"), 90);
-            _list.Columns.Add(L10n.T("ui.hs.col.process"), 86);
-            _list.Columns.Add(L10n.T("ui.hs.col.config"), 86);
-            _list.Columns.Add(L10n.T("ui.col.note"), 380);
-            _list.Columns.Add(L10n.T("ui.hs.col.source"), 300);
+            _list.Columns.Add(L10n.T("ui.col.combo"), 130);
+            _list.Columns.Add(L10n.T("ui.hs.col.software"), 110);
+            _list.Columns.Add(L10n.T("ui.hs.col.module"), 100);
+            _list.Columns.Add(L10n.T("ui.col.evidence"), 84);
+            _list.Columns.Add(L10n.T("ui.hs.col.process"), 72);
+            _list.Columns.Add(L10n.T("ui.hs.col.config"), 72);
+            _list.Columns.Add(L10n.T("ui.col.note"), 220);
+            _list.Columns.Add(L10n.T("ui.hs.col.source"), 200);
+            // 来源路径列吃满剩余宽度：长路径不再截断，最大化不再留白。
+            UiTheme.FillColumn(_list, 7, 200);
             _list.DoubleClick += delegate (object s, EventArgs e) { OpenSelectedConfig(); };
 
             Controls.Add(_list);

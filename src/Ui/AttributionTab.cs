@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Text;
 using System.Threading;
@@ -11,6 +11,8 @@ namespace HotkeyHound.Ui
     /// 按键归属（引擎 B）。
     /// 铁律：本页加载时绝不安装任何钩子——AttributionEngine.Start() 只在
     /// 用户点「开始监听」或确认「自动归属」时才被调用，停止时立刻 UnhookWindowsHookEx。
+    /// 2.0.0：顶部说明区改为自动换行堆栈（窄窗口/任何宽度都不截断），
+    /// 路径列与说明列吃满剩余宽度；业务逻辑与 v1.3.1 完全一致。
     /// </summary>
     public sealed class AttributionTab : UserControl
     {
@@ -21,8 +23,6 @@ namespace HotkeyHound.Ui
         private readonly Button _autoButton;
         private readonly Label _statusLabel;
         private readonly Label _autoStatus;
-        private readonly Label _warningLabel;
-        private readonly Label _hint;
         private readonly ListView _list;
         private readonly ListView _autoList;
 
@@ -34,85 +34,65 @@ namespace HotkeyHound.Ui
         {
             _host = host;
 
-            var top = new Panel();
-            top.Dock = DockStyle.Top;
-            top.Height = 196;
+            // ------------------------------------------------------------ 顶部：自动换行堆栈
+            var top = UiTheme.NewStack();
 
             var title = new Label();
             title.Text = L10n.T("ui.at.title");
             title.Font = UiTheme.TitleFont(12F);
-            title.Location = new Point(0, 6);
             title.AutoSize = true;
+            title.Margin = new Padding(0, 2, 0, 2);
 
-            _hint = new Label();
-            _hint.Location = new Point(2, 34);
-            _hint.Size = new Size(100, 34);
-            _hint.AutoSize = false;
-            _hint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            _hint.ForeColor = UiTheme.Muted;
-            _hint.Text = L10n.T("ui.at.hint");
+            var hint = UiTheme.StackLabel(L10n.T("ui.at.hint"), UiTheme.Muted);
+
+            var buttonRow = UiTheme.NewFlowRow();
 
             _toggleButton = new Button();
             _toggleButton.Text = L10n.T("ui.at.start");
             _toggleButton.Font = UiTheme.TitleFont(11F);
             _toggleButton.Size = new Size(150, 40);
-            _toggleButton.Location = new Point(0, 74);
+            _toggleButton.Margin = new Padding(0, 2, 10, 2);
             _toggleButton.Click += OnToggleClick;
 
             _clearButton = new Button();
             _clearButton.Text = L10n.T("ui.at.clear");
             _clearButton.Size = new Size(90, 40);
-            _clearButton.Location = new Point(160, 74);
+            _clearButton.Margin = new Padding(0, 2, 10, 2);
             _clearButton.Click += OnClearClick;
 
             _copyButton = new Button();
             _copyButton.Text = L10n.T("ui.at.copy");
             _copyButton.Size = new Size(130, 40);
-            _copyButton.Location = new Point(258, 74);
+            _copyButton.Margin = new Padding(0, 2, 10, 2);
             _copyButton.Click += OnCopyClick;
 
-            _statusLabel = new Label();
-            _statusLabel.Location = new Point(398, 86);
-            _statusLabel.AutoSize = true;
-            _statusLabel.ForeColor = UiTheme.Muted;
-            _statusLabel.Text = L10n.T("ui.at.notStarted");
+            buttonRow.Controls.Add(_toggleButton);
+            buttonRow.Controls.Add(_clearButton);
+            buttonRow.Controls.Add(_copyButton);
 
-            _warningLabel = new Label();
-            _warningLabel.Location = new Point(622, 74);
-            _warningLabel.Size = new Size(380, 52);
-            _warningLabel.AutoSize = false;
-            _warningLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            _warningLabel.Text = BuildWarningText();
+            _statusLabel = UiTheme.StackLabel(L10n.T("ui.at.notStarted"), UiTheme.Muted);
 
+            var warning = UiTheme.StackLabel(BuildWarningText(), UiTheme.Warning);
+
+            var autoRow = UiTheme.NewFlowRow();
             _autoButton = new Button();
             _autoButton.Text = L10n.T("ui.at.autoButton");
             _autoButton.Size = new Size(480, 34);
-            _autoButton.Location = new Point(0, 128);
+            _autoButton.Margin = new Padding(0, 2, 10, 2);
             _autoButton.Click += OnAutoClick;
+            autoRow.Controls.Add(_autoButton);
 
-            _autoStatus = new Label();
-            _autoStatus.Location = new Point(490, 136);
-            _autoStatus.Size = new Size(560, 24);
-            _autoStatus.AutoSize = false;
-            _autoStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            _autoStatus.ForeColor = UiTheme.Muted;
-            _autoStatus.Text = "";
+            _autoStatus = UiTheme.StackLabel("", UiTheme.Muted);
 
-            top.Controls.Add(title);
-            top.Controls.Add(_hint);
-            top.Controls.Add(_toggleButton);
-            top.Controls.Add(_clearButton);
-            top.Controls.Add(_copyButton);
-            top.Controls.Add(_statusLabel);
-            top.Controls.Add(_warningLabel);
-            top.Controls.Add(_autoButton);
-            top.Controls.Add(_autoStatus);
-            // 锚定右侧的标签在构造时父容器还很窄，必须按实际宽度重新定位，否则会被推到窗口外。
-            top.Resize += delegate (object s, EventArgs e)
-            {
-                _warningLabel.Left = Math.Max(480, top.ClientSize.Width - _warningLabel.Width - 12);
-            };
+            UiTheme.StackAdd(top, title);
+            UiTheme.StackAdd(top, hint);
+            UiTheme.StackAdd(top, buttonRow);
+            UiTheme.StackAdd(top, _statusLabel);
+            UiTheme.StackAdd(top, warning);
+            UiTheme.StackAdd(top, autoRow);
+            UiTheme.StackAdd(top, _autoStatus);
 
+            // ------------------------------------------------------------ 手动记录列表
             _list = new ListView();
             _list.Dock = DockStyle.Fill;
             _list.View = View.Details;
@@ -125,7 +105,9 @@ namespace HotkeyHound.Ui
             _list.Columns.Add(L10n.T("ui.at.col.bitness"), 60);
             _list.Columns.Add(L10n.T("ui.col.combo"), 160);
             _list.Columns.Add(L10n.T("ui.col.path"), 300);
-            _list.Columns.Add(L10n.T("ui.at.col.elevated"), 80);
+            _list.Columns.Add(L10n.T("ui.at.col.elevated"), 96);
+            // 路径列吃满剩余宽度（2.0.0：修最大化时截断）。
+            UiTheme.FillColumn(_list, 5, 200);
 
             var autoHeader = new Label();
             autoHeader.Dock = DockStyle.Top;
@@ -135,6 +117,7 @@ namespace HotkeyHound.Ui
             autoHeader.ForeColor = UiTheme.Muted;
             autoHeader.TextAlign = ContentAlignment.MiddleLeft;
 
+            // ------------------------------------------------------------ 自动归属结果
             _autoList = new ListView();
             _autoList.Dock = DockStyle.Fill;
             _autoList.View = View.Details;
@@ -145,6 +128,7 @@ namespace HotkeyHound.Ui
             _autoList.Columns.Add(L10n.T("ui.at.autoCol.outcome"), 100);
             _autoList.Columns.Add(L10n.T("ui.at.autoCol.owner"), 180);
             _autoList.Columns.Add(L10n.T("ui.at.autoCol.note"), 460);
+            UiTheme.FillColumn(_autoList, 3, 220);
 
             var split = new SplitContainer();
             split.Dock = DockStyle.Fill;

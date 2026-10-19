@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -222,48 +222,95 @@ namespace HotkeyHound
         private static void RunT3()
         {
             var adapter = new PowerToysKeyboardManagerAdapter();
-            var list = new List<DeclaredHotkey>(adapter.Collect());
-
             string[] expected = new string[]
             {
                 "Ctrl+Alt+B", "Ctrl+Alt+F", "Ctrl+Alt+M", "Ctrl+Alt+N",
                 "Ctrl+Alt+P", "Ctrl+Alt+R", "Ctrl+Alt+T", "Win+Shift+F23"
             };
 
-            var found = new HashSet<string>(StringComparer.Ordinal);
-            foreach (DeclaredHotkey d in list) found.Add(d.Combo.Normalize());
+            var problems = new List<string>();
+            var sb = new StringBuilder();
 
-            var missing = new List<string>();
-            foreach (string e in expected) if (!found.Contains(e)) missing.Add(e);
-
-            string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                       "Microsoft", "PowerToys");
-            bool fromRealPath = false;
-            foreach (DeclaredHotkey d in list)
+            // ---- 1) 合成样本：只验证解析器本身（任何机器都能跑，不要求装了 PowerToys）
+            var entries = new List<string>();
+            string remapTarget = KeyCombo.Parse("Ctrl+P") == null ? "162;164;80" : KeyCombo.Parse("Ctrl+P").ToVkList();
+            foreach (string spec in expected)
             {
-                if (d.SourcePath != null && d.SourcePath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                KeyCombo c = KeyCombo.Parse(spec);
+                if (c == null) { problems.Add("组合键无法解析：" + spec); continue; }
+                bool runsProgram = spec == "Ctrl+Alt+B" || spec == "Ctrl+Alt+F" || spec.StartsWith("Win+");
+                if (runsProgram)
                 {
-                    fromRealPath = true;
-                    break;
+                    entries.Add("{\"originalKeys\":\"" + c.ToVkList() + "\",\"operationType\":1,"
+                                + "\"runProgramFilePath\":\"C:\\\\Tools\\\\" + c.Display().Replace("+", "") + ".cmd\"}");
+                }
+                else
+                {
+                    entries.Add("{\"originalKeys\":\"" + c.ToVkList() + "\",\"operationType\":0,"
+                                + "\"newRemapKeys\":\"" + remapTarget + "\"}");
                 }
             }
+            string fixture = "{\"remapShortcuts\":{\"global\":[" + string.Join(",", entries.ToArray()) + "]}}";
+            JsonValue doc = JsonLite.TryParse(fixture);
+            if (doc == null) problems.Add("合成样本 JSON 无法解析");
+            List<DeclaredHotkey> parsed = doc == null
+                ? new List<DeclaredHotkey>()
+                : PowerToysKeyboardManagerAdapter.ParseDocument(doc, "fixture.json");
 
-            bool pass = missing.Count == 0 && list.Count >= 8 && fromRealPath;
-            var sb = new StringBuilder();
-            sb.AppendFormat("从 {0} 解析出 {1} 条重映射，8 条目标键位 {2}",
-                            adapter.ConfigPath, list.Count, missing.Count == 0 ? "全部命中" : "缺少 " + string.Join("、", missing.ToArray()));
-            if (!fromRealPath) sb.Append("；警告：来源路径不在 %LOCALAPPDATA%\\Microsoft\\PowerToys 下");
-            if (list.Count > 0)
+            var gotFixture = new HashSet<string>(StringComparer.Ordinal);
+            foreach (DeclaredHotkey d in parsed) if (d.Combo != null) gotFixture.Add(d.Combo.Normalize());
+            var missingFixture = new List<string>();
+            foreach (string e in expected) if (!gotFixture.Contains(e)) missingFixture.Add(e);
+            if (missingFixture.Count > 0) problems.Add("合成样本缺少 " + string.Join("、", missingFixture.ToArray()));
+            if (parsed.Count != expected.Length)
+                problems.Add("合成样本条数 " + parsed.Count + "，期望 " + expected.Length);
+
+            sb.AppendFormat("合成样本解析：{0} 条里 {1} 条键位命中", parsed.Count, expected.Length - missingFixture.Count);
+
+            // ---- 2) 真实配置：只有本机真的装了 PowerToys 才核对（干净机器上没有它）
+            bool installed = File.Exists(adapter.ConfigPath);
+            int realCount = 0;
+            if (installed)
+            {
+                var real = new List<DeclaredHotkey>(adapter.Collect());
+                realCount = real.Count;
+                var gotReal = new HashSet<string>(StringComparer.Ordinal);
+                foreach (DeclaredHotkey d in real) if (d.Combo != null) gotReal.Add(d.Combo.Normalize());
+                var missingReal = new List<string>();
+                foreach (string e in expected) if (!gotReal.Contains(e)) missingReal.Add(e);
+                if (missingReal.Count > 0) problems.Add("真实配置缺少 " + string.Join("、", missingReal.ToArray()));
+                sb.AppendFormat("；本机真实配置解析出 {0} 条，8 条目标键位{1}",
+                                realCount, missingReal.Count == 0 ? "全部命中" : "有缺失");
+            }
+            else
+            {
+                sb.Append("；本机未安装 PowerToys 键盘管理器，真实配置核对跳过");
+            }
+
+            if (parsed.Count > 0)
             {
                 sb.Append("。示例：");
-                for (int i = 0; i < list.Count && i < 3; i++)
+                for (int i = 0; i < parsed.Count && i < 3; i++)
                 {
                     if (i > 0) sb.Append("；");
-                    sb.Append(list[i].Combo.Display()).Append(" = ").Append(list[i].Purpose)
-                      .Append("（originalKeys=").Append(list[i].RawValue).Append("）");
+                    sb.Append(parsed[i].Combo.Display()).Append(" = ").Append(parsed[i].Purpose)
+                      .Append("（originalKeys=").Append(parsed[i].RawValue).Append("）");
                 }
             }
-            Add("T3", "引擎 D 解析 PowerToys 键盘管理器", pass, sb.ToString());
+
+            if (problems.Count > 0)
+            {
+                Add("T3", "引擎 D 解析 PowerToys 键盘管理器", false,
+                    sb.ToString() + "。问题：" + string.Join("；", problems.ToArray()));
+            }
+            else if (!installed)
+            {
+                Inconclusive("T3", "引擎 D 解析 PowerToys 键盘管理器", sb.ToString());
+            }
+            else
+            {
+                Add("T3", "引擎 D 解析 PowerToys 键盘管理器", true, sb.ToString());
+            }
         }
 
         // ---------------------------------------------------------------- T4
@@ -306,11 +353,17 @@ namespace HotkeyHound
             }
             if (ptTotal == 0) ptMatched = -1;
 
-            bool pass = table.Rows.Count >= 1000 && bucketExplained && ptTotal > 0 && ptMatched == ptTotal;
+            // 干净机器（例如虚拟机/CI）上根本没有 PowerToys：这时「声明必须对到底表」无从谈起，
+            // 只核对与机器无关的部分；装了 PowerToys 的机器仍然要求一一对上。
+            bool ptInstalled = File.Exists(new PowerToysKeyboardManagerAdapter().ConfigPath);
+            bool ptOk = !ptInstalled || (ptTotal > 0 && ptMatched == ptTotal);
+
+            bool pass = table.Rows.Count >= 1000 && bucketExplained && ptOk;
             string msg = string.Format(
-                "真相表 {0} 行（要求 ≥1000）；四类说明文本齐备={1}；声明 {2} 条（其中 PowerToys {3} 条，能对到底表 {4} 条）；候选进程 {5} 个",
+                "真相表 {0} 行（要求 ≥1000）；四类说明文本齐备={1}；声明 {2} 条（其中 PowerToys {3} 条，能对到底表 {4} 条）；候选进程 {5} 个{6}",
                 table.Rows.Count, bucketExplained ? "是" : "否", config.Declared.Count, ptTotal,
-                ptMatched < 0 ? "n/a" : ptMatched.ToString(), candidates.Count);
+                ptMatched < 0 ? "n/a" : ptMatched.ToString(), candidates.Count,
+                ptInstalled ? "" : "；本机未安装 PowerToys，声明核对跳过");
             Add("T4", "真相表", pass, msg);
         }
 
@@ -1117,7 +1170,7 @@ namespace HotkeyHound
         // ---------------------------------------------------------------- T7
 
         /// <summary>
-        /// 引擎 C 吞键检测。判定逻辑先用纯函数把四个分支各走一遍（确定性），
+        /// 引擎 C 吞键检测。判定逻辑先用纯函数把七个分支各走一遍（确定性，含两个前提不足分支），
         /// 再用真实的 WH_KEYBOARD_LL 钩子跑两次布防会话（喂事件 / 不喂事件）；
         /// 最后用一个测试用的 LL 钩子真的吞掉 Ctrl+Alt+Shift+F14 + SendInput 验证端到端，
         /// 这部分允许 INCONCLUSIVE。
@@ -1127,21 +1180,27 @@ namespace HotkeyHound
             var detail = new StringBuilder();
             var problems = new List<string>();
 
-            // ---- A：判定逻辑四分支（纯函数，直接喂事件）
+            // ---- A：判定逻辑七分支（纯函数，直接喂事件；2.0.0 起判定带前提条件，条件不足给 Inconclusive）
             string ev, note;
-            var b1 = HookVerdictLogic.Decide(false, false, false, true, out ev, out note);
-            var b2 = HookVerdictLogic.Decide(true, true, false, true, out ev, out note);
-            var b3 = HookVerdictLogic.Decide(true, true, true, true, out ev, out note);
-            var b4 = HookVerdictLogic.Decide(true, false, false, true, out ev, out note);
-            var b5 = HookVerdictLogic.Decide(true, false, false, false, out ev, out note);
+            var b1 = HookVerdictLogic.Decide(false, false, false, true, true, true, out ev, out note);
+            var b2 = HookVerdictLogic.Decide(true, true, false, true, true, true, out ev, out note);
+            var b3 = HookVerdictLogic.Decide(true, true, true, true, true, true, out ev, out note);
+            var b4 = HookVerdictLogic.Decide(true, false, false, true, true, true, out ev, out note);
+            var b5 = HookVerdictLogic.Decide(true, false, false, false, true, true, out ev, out note);
+            // 前提不满足：引擎 B 没在听 / 引擎 A 还没扫描 → 必须给「无法判定」，不能乱猜红字
+            var b6 = HookVerdictLogic.Decide(true, true, false, true, false, true, out ev, out note);
+            var b7 = HookVerdictLogic.Decide(true, false, false, true, true, false, out ev, out note);
 
             if (b1 != HookVerdict.SwallowedUpstream) problems.Add("分支1（没看到）=" + b1);
             if (b2 != HookVerdict.SwallowedBeforeHotkey) problems.Add("分支2（看到+占用+无归属）=" + b2);
             if (b3 != HookVerdict.Delivered) problems.Add("分支3（看到+归属）=" + b3);
             if (b4 != HookVerdict.NotGlobal) problems.Add("分支4（看到+未占用）=" + b4);
             if (b5 != HookVerdict.Unknown) problems.Add("分支5（未超时）=" + b5);
-            detail.Append("    四分支判定：没看到→").Append(b1).Append("；看到+占用+无归属→").Append(b2)
-                  .Append("；看到+归属→").Append(b3).Append("；看到+未占用→").Append(b4).Append("\r\n");
+            if (b6 != HookVerdict.Inconclusive) problems.Add("分支6（引擎B未启动）=" + b6);
+            if (b7 != HookVerdict.Inconclusive) problems.Add("分支7（引擎A未扫描）=" + b7);
+            detail.Append("    七分支判定：没看到→").Append(b1).Append("；看到+占用+无归属→").Append(b2)
+                  .Append("；看到+归属→").Append(b3).Append("；看到+未占用→").Append(b4)
+                  .Append("；引擎B未启动→").Append(b6).Append("；引擎A未扫描→").Append(b7).Append("\r\n");
 
             // ---- B：真实安装 WH_KEYBOARD_LL
             var sniffer = new HookSniffer();
@@ -1160,6 +1219,10 @@ namespace HotkeyHound
                 }
                 return false;
             };
+            // 自检里引擎 B 从不启动；扫描结果由 T2 真实产出（null 才算没扫）。
+            // 2.0.0：判定需要这两个前提，否则会给出 Inconclusive 而不是期望结论。
+            sniffer.AttributionActive = delegate () { return false; };
+            sniffer.ScanDone = delegate () { return occupancy != null; };
 
             try
             {
@@ -1167,7 +1230,7 @@ namespace HotkeyHound
                 {
                     foreach (string l in snifferLog) detail.Append("    ").Append(l).Append("\r\n");
                     Inconclusive("T7", "引擎 C 吞键检测",
-                        "WH_KEYBOARD_LL 安装失败（" + sniffer.LastError + "）。判定逻辑四分支已验证通过。");
+                        "WH_KEYBOARD_LL 安装失败（" + sniffer.LastError + "）。判定逻辑七分支已验证通过。");
                     return;
                 }
                 detail.Append("    真实 LL 钩子=0x").Append(sniffer.HookHandle.ToInt64().ToString("X"))
@@ -1249,7 +1312,7 @@ namespace HotkeyHound
 
                 bool pass = problems.Count == 0;
                 var sb = new StringBuilder();
-                sb.Append("四分支判定逻辑全部正确；真实 WH_KEYBOARD_LL 钩子安装成功（句柄 0x")
+                sb.Append("七分支判定逻辑全部正确；真实 WH_KEYBOARD_LL 钩子安装成功（句柄 0x")
                   .Append(sniffer.HookHandle.ToInt64().ToString("X")).Append("）；")
                   .Append("真实布防会话 2 次（NotGlobal / SwallowedUpstream）").Append(pass ? "均正确" : "有问题");
                 if (c3Skipped) sb.Append("；端到端真实吞键测试 INCONCLUSIVE（").Append(c3Reason).Append("）");

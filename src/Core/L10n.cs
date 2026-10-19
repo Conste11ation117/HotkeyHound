@@ -116,6 +116,12 @@ namespace HotkeyHound.Core
             return Normalize(lang);
         }
 
+        /// <summary>用户是否已经选过语言（决定首次启动要不要弹语言选择框）。</summary>
+        public static bool HasConfiguredLanguage()
+        {
+            return ReadConfiguredLanguage() != null;
+        }
+
         private static void WriteConfiguredLanguage(string lang)
         {
             WriteSetting("lang", lang);
@@ -222,13 +228,16 @@ namespace HotkeyHound.Core
               "四个引擎全部可用：A 占用扫描、B 按键归属、C 钩子窃取检测、D 配置聚合。"
               + "A/D 只读、不需要管理员；B/C 需要安装钩子（仅在显式点「开始监听」/「布防」时），"
               + "管理员权限下覆盖最全。x64 与 32 位进程的归属都已覆盖（后者由自动拉起的 32 位宿主提供），"
-              + "并已在真机验证。",
+              + "并已在真机验证。引擎 C 在前提不足（引擎 B 未监听 / 引擎 A 未扫描）时只给「无法判定」，"
+              + "不会误报截胡。",
               "All four engines are available: A occupancy scan, B key attribution, "
               + "C hook interception detection, D config aggregation. "
               + "A/D are read-only and need no administrator rights; B/C install hooks "
               + "(only when you explicitly click Listen / Arm), cover the most as administrator. "
               + "Attribution now covers both x64 and 32-bit processes (the latter through a 32-bit "
-              + "companion host started automatically), and has been verified on a real machine.");
+              + "companion host started automatically), and has been verified on a real machine. "
+              + "Engine C reports Inconclusive instead of guessing when its prerequisites are missing "
+              + "(B not listening / A not scanned).");
             A("common.unknown", "未知", "Unknown");
             A("common.yes", "是", "Yes");
             A("common.no", "否", "No");
@@ -484,6 +493,7 @@ namespace HotkeyHound.Core
             A("verdict.delivered", "正常送达", "Delivered normally");
             A("verdict.notGlobal", "不是全局热键", "Not a global hotkey");
             A("verdict.unknown", "等待结论", "Awaiting verdict");
+            A("verdict.inconclusive", "无法判定（条件不足）", "Inconclusive (prerequisite missing)");
 
             A("verdictLogic.pending.evidence", "还在布防时间窗内", "Still inside the arming window");
             A("verdictLogic.pending.note",
@@ -523,6 +533,25 @@ namespace HotkeyHound.Core
               + "可以按对照排除工作流逐个退出可疑软件再测一次。",
               "The key reached the system but the owner did not get the command — a hook likely "
               + "intercepted it. Use the comparison workflow to exit suspect software one at a time and re-test.");
+
+            A("verdictLogic.inconclusiveNoScan.evidence",
+              "本次结算时还没有可用的占用扫描结果（引擎 A 的占用表是空的）",
+              "No occupancy scan result was available when this probe settled (engine A's table is empty)");
+            A("verdictLogic.inconclusiveNoScan.note",
+              "缺少占用表就无法区分「不是全局热键」和「被钩子截胡」。请先到「扫描总览」页点「开始扫描」，再回来布防。",
+              "Without the occupancy table this tool cannot tell \"not a global hotkey\" from \"intercepted by a hook\". "
+              + "Run a scan on the Scan overview page first, then arm again.");
+
+            A("verdictLogic.inconclusiveNoB.evidence",
+              "本程序的 LL 钩子看到了这个按键，引擎 A 也把它记为已占用，但结算时引擎 B（按键归属）没有在监听",
+              "This program's LL hook saw the key and engine A marked it occupied, but engine B (attribution) "
+              + "was not listening when the probe settled");
+            A("verdictLogic.inconclusiveNoB.note",
+              "没有归属报告可能只是因为引擎 B 没开，不能据此断定「被截胡」。请在布防时选择一并启动引擎 B，"
+              + "或先到「按键归属」页点「开始监听」，再回来布防一次。",
+              "A missing attribution report may simply mean engine B was off — that is not evidence of interception. "
+              + "Choose to start engine B together when arming, or click Start listening on the Attribution page first, "
+              + "then arm again.");
 
             A("verdictLogic.late",
               "（注：{0} 的归属报告在按键之后超过 {1:0.0} 秒才到，判为截胡）",
@@ -897,6 +926,8 @@ namespace HotkeyHound.Core
             A("ui.restart.cancelled", "已取消提权（你在 UAC 提示里点了「否」）。",
               "Elevation cancelled (you chose No in the UAC prompt).");
             A("ui.restart.ok", "已请求提权重启，本窗口即将关闭。", "Elevation requested; this window will now close.");
+            A("ui.restart.handoff", "已启动提权实例，本窗口正在关闭并完成交接…",
+              "Elevated instance launched; this window is closing to hand over…");
 
             // Overview
             A("ui.ov.scan", "开始扫描", "Start scan");
@@ -1008,9 +1039,11 @@ namespace HotkeyHound.Core
             A("ui.hk.title", "钩子检测（引擎 C）：判断按键是否被更上层的钩子吞掉",
               "Hook detection (engine C): judge whether a key is swallowed by an upstream hook");
             A("ui.hk.guide",
-              "三步：① 填好组合键后点「布防」（此刻才安装低层键盘钩子）　② 立即按下有问题的快捷键　③ 看下方结论。",
+              "三步：① 填好组合键后点「布防」（此刻才安装低层键盘钩子；若引擎 B 未在监听，会先征求你的同意一并启动）"
+              + "　② 立即按下有问题的快捷键　③ 看下方结论。",
               "Three steps: (1) enter a combination and click Arm (only then is the low-level keyboard hook "
-              + "installed)  (2) immediately press the problematic hotkey  (3) read the verdict below.");
+              + "installed; if engine B is not listening, you will be asked for consent to start it too)  "
+              + "(2) immediately press the problematic hotkey  (3) read the verdict below.");
             A("ui.hk.arm", "布防（安装钩子）", "Arm (install hook)");
             A("ui.hk.stop", "停止（卸载钩子）", "Stop (unload hook)");
             A("ui.hk.notArmed", "低层键盘钩子未安装。", "Low-level keyboard hook not installed.");
@@ -1038,6 +1071,25 @@ namespace HotkeyHound.Core
             A("ui.hk.record", "记录本次对照", "Record comparison");
             A("ui.hk.parseFail", "无法解析这个组合键。示例：Ctrl+Alt+M、Win+Shift+F23。",
               "Cannot parse this combination. Examples: Ctrl+Alt+M, Win+Shift+F23.");
+            A("ui.hk.needB.title", "需要引擎 B 配合", "Engine B is required for a full verdict");
+            A("ui.hk.needB.body",
+              "引擎 C 要区分「正常送达」和「被钩子截胡」，必须让引擎 B（按键归属）同时监听；"
+              + "它不监听时，本次布防的结论只会诚实地标为「无法判定」。\r\n\r\n"
+              + "是否现在一并启动引擎 B？\r\n"
+              + "（启动后它会把上报 DLL 注入当前登录会话的进程——这是归属判定的工作原理；"
+              + "选「否」也可以继续布防。）",
+              "To tell \"delivered normally\" from \"intercepted by a hook\", engine C needs engine B (attribution) "
+              + "listening at the same time; without it, verdicts of this probe can only honestly be "
+              + "\"inconclusive\".\r\n\r\nStart engine B now as well?\r\n"
+              + "(Once started it injects its report DLL into the processes of this logon session — that is how "
+              + "attribution works. Choosing No still arms the probe.)");
+            A("ui.hk.engineB.starting", "正在启动引擎 B（按键归属）…", "Starting engine B (attribution)…");
+            A("ui.hk.engineB.failed", "引擎 B 启动失败：{0}（本次布防的截胡判定将标为「无法判定」）",
+              "Engine B failed to start: {0} (interception verdicts of this probe will be marked inconclusive)");
+            A("ui.hk.engineB.coStarted", "已联动启动引擎 B。「停止（卸载钩子）」不会停掉它；需要时到「按键归属」页停止。",
+              "Engine B has been started together. Stop (unload hook) will not stop it; use the Attribution page when needed.");
+            A("ui.hk.arming", "正在布防…", "Arming…");
+            A("ui.hk.comboCaption", "组合键：", "Combination: ");
             A("ui.hk.installing", "正在安装低层键盘钩子…", "Installing low-level keyboard hook…");
             A("ui.hk.installFail", "钩子安装失败：{0}", "Failed to install hook: {0}");
             A("ui.hk.installFailDlg", "无法安装 WH_KEYBOARD_LL 钩子：\r\n{0}",
@@ -1047,8 +1099,9 @@ namespace HotkeyHound.Core
               "Armed {0}, window {1:0.0} s; press it now.");
             A("ui.hk.armedTick", "布防中：{0}，窗口剩余 {1:0.0} 秒，请现在按下它。",
               "Armed: {0}, {1:0.0} s left in the window; press it now.");
-            A("ui.hk.stopped", "已停止并卸载低层键盘钩子（UnhookWindowsHookEx）。",
-              "Stopped and unloaded the low-level keyboard hook (UnhookWindowsHookEx).");
+            A("ui.hk.stopped", "已停止并卸载低层键盘钩子（UnhookWindowsHookEx）。若引擎 B 是被本页联动启动的，它仍在监听。",
+              "Stopped and unloaded the low-level keyboard hook (UnhookWindowsHookEx). If engine B was co-started "
+              + "from this page, it is still listening.");
             A("ui.hk.verdictPrefix", "结论：{0}", "Verdict: {0}");
             A("ui.hk.noCandidates", "(没有候选进程在运行)", "(no candidate processes running)");
             A("ui.hk.compare.label", "对照：{0}", "Comparison: {0}");
@@ -1078,7 +1131,7 @@ namespace HotkeyHound.Core
             A("ui.rt.limits",
               "已知限制：\r\n"
               + "· 引擎 B（按键归属）、引擎 C（钩子检测）与按键监视按设计只在用户显式点「开始监听」「布防」"
-              + "或「开始监视」时才安装钩子；程序加载页面不会安装任何钩子。\r\n"
+              + "或「开始监视」时才安装钩子；程序加载页面不会安装任何钩子。「钩子检测」页布防时若引擎 B 未在监听，会在征得你同意后一并启动它。\r\n"
               + "· 用键盘钩子实现的热键（PowerToys 键盘管理器、AutoHotkey、输入法）不会占 RegisterHotKey，"
               + "因此引擎 A 会把它们报成「空闲」——报告里靠引擎 D 的配置声明补上。\r\n"
               + "· 非管理员运行时看不到提权进程的热键归属；32 位进程由单独的 32 位宿主覆盖，"
@@ -1088,7 +1141,8 @@ namespace HotkeyHound.Core
               "Known limitations:\r\n"
               + "· Engines B (attribution), C (hook detection) and the key monitor install hooks only when "
               + "the user explicitly clicks Start listening, Arm, or Start monitoring; loading a page installs "
-              + "no hook.\r\n"
+              + "no hook. When arming on the Hook detection page while engine B is off, engine B is started "
+               + "too — only after you consent.\r\n"
               + "· Hotkeys implemented with keyboard hooks (PowerToys Keyboard Manager, AutoHotkey, IMEs) do "
               + "not use RegisterHotKey, so engine A reports them as \"free\" — the report fills the gap with "
               + "engine D's config declarations.\r\n"

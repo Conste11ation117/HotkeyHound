@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -25,34 +25,39 @@ namespace HotkeyHound.Core.Adapters
 
         private List<DeclaredHotkey> CollectCore()
         {
-            var list = new List<DeclaredHotkey>();
             string file = ConfigPath;
             if (!File.Exists(file))
             {
                 Note(L10n.F("adapter.ptkey.configNotFound", file));
-                return list;
+                return new List<DeclaredHotkey>();
             }
 
             var json = JsonLite.TryParseFile(file);
             if (json == null)
             {
                 Warn(L10n.F("adapter.ptkey.parseFailed", file));
-                return list;
+                return new List<DeclaredHotkey>();
             }
+
+            List<DeclaredHotkey> list = ParseDocument(json, file);
+            Note(L10n.F("adapter.ptkey.parsed", list.Count));
+            return list;
+        }
+
+        /// <summary>
+        /// 把已解析的 JSON 文档转成声明列表。抽出来是为了让自测能用合成样本验证解析器本身，
+        /// 而不是依赖「本机恰好装了 PowerToys」。
+        /// </summary>
+        internal static List<DeclaredHotkey> ParseDocument(JsonValue json, string file)
+        {
+            var list = new List<DeclaredHotkey>();
+            if (json == null) return list;
 
             JsonValue shortcuts;
-            if (!json.TryGet("remapShortcuts", out shortcuts) || !shortcuts.IsObject)
-            {
-                Note(L10n.T("adapter.ptkey.noRemapSection"));
-                return list;
-            }
+            if (!json.TryGet("remapShortcuts", out shortcuts) || !shortcuts.IsObject) return list;
 
             JsonValue global;
-            if (!shortcuts.TryGet("global", out global) || !global.IsArray)
-            {
-                Note(L10n.T("adapter.ptkey.noGlobalArray"));
-                return list;
-            }
+            if (!shortcuts.TryGet("global", out global) || !global.IsArray) return list;
 
             foreach (var item in global.Elements)
             {
@@ -61,11 +66,7 @@ namespace HotkeyHound.Core.Adapters
                 if (string.IsNullOrEmpty(original)) continue;
 
                 var combo = KeyCombo.FromVkList(original);
-                if (combo == null)
-                {
-                    Warn(L10n.F("adapter.ptkey.badOriginal", original));
-                    continue;
-                }
+                if (combo == null) continue;
 
                 int op = item["operationType"] == null ? 0 : item["operationType"].AsInt(0);
                 string purpose;
@@ -83,10 +84,8 @@ namespace HotkeyHound.Core.Adapters
                                                     : (newKeys == null ? L10n.T("adapter.ptkey.unknownTarget") : newKeys));
                 }
 
-                list.Add(Make(Software, "Keyboard Manager", purpose, combo, original, file, false));
+                list.Add(Make("PowerToys", "Keyboard Manager", purpose, combo, original, file, false));
             }
-
-            Note(L10n.F("adapter.ptkey.parsed", list.Count));
             return list;
         }
     }

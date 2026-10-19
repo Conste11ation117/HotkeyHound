@@ -147,11 +147,17 @@ public sealed class TruthRow {
 ### 引擎 C — 钩子窃取检测（chunk 2）
 
 - `HookSniffer.cs` 在独立线程装 `WH_KEYBOARD_LL(13)`（本进程内，托管代码即可），记录每次按键的 combo 与时间戳。
-- 判定规则（对同一个组合 X，在「布防后 3 秒内」）：
-  1. 我们的 LL 钩子**根本没看到** X 按下 → `SwallowedUpstream`：「按键被你机器上某个更上层的钩子吞掉了，没能到达本程序」。
-  2. 看到了 X，且 X 在 A 的结果里是已占用，但 1.5 秒内**没有** B 的归属报告 → `SwallowedBeforeHotkey`：「按键到达了系统，但持有者没收到命令——疑似被钩子截胡」。
-  3. 看到了 X 且收到 B 报告 → `Delivered`：归属明确。
-  4. 看到了 X，X 不在 A 的已占用表里 → `NotGlobal`：「这不是全局热键，只是当前窗口自己处理的按键」。
+- 判定规则（对同一个组合 X，在「布防后 3 秒内」；2.0.0 起判定带前提条件——前提不足时诚实给
+  `Inconclusive（无法判定）`并写明缺什么，绝不硬猜「截胡」）：
+  1. 会话还没超时 → 不下结论（`Unknown`）。
+  2. 收到 B 对 X 的归属报告 → `Delivered`：归属明确。
+  3. 我们的 LL 钩子**根本没看到** X 按下 → `SwallowedUpstream`：「按键被你机器上某个更上层的钩子吞掉了，没能到达本程序」。
+  4. 前提缺失：引擎 A 还没完成扫描 → `Inconclusive`（注明未扫描，占用与否无从谈起）。
+  5. 看到了 X，X 不在 A 的已占用表里 → `NotGlobal`：「这不是全局热键，只是当前窗口自己处理的按键」。
+  6. 前提缺失：引擎 B 未在监听 → `Inconclusive`（注明没有 B 就无法证明「截胡」）。
+     布防时若 B 未启动，界面弹一次确认框，征得同意后一并启动 B（仍算用户的明确动作）。
+  7. 看到了 X，X 在 A 的结果里是已占用、B 在监听，但 1.5 秒内**没有** B 的归属报告 →
+     `SwallowedBeforeHotkey`：「按键到达了系统，但持有者没收到命令——疑似被钩子截胡」。
 - 对照排除工作流：静态候选表（PowerToys.KeyboardManagerEngine、微信输入法 wetype_*、ToDesk、豆包、讯飞、UU、雷电模拟器、NVIDIA Overlay 等）列出候选，界面给出分步指引：「先记录当前结果 → 退出该软件 → 再测一次 → 记录对比」；工具只记录与对比，**不自动结束或暂停任何进程**（安全考虑，v1 明确不做）。
 
 ## 6. CLI 契约
@@ -216,7 +222,7 @@ WinForms，约 1080×720，中文字体（微软雅黑），标签页：
 | T4 | 真相表 | 行数 ≥ 1000；四类 bucket 均有解释文本；PowerToys 声明能对到 A 的结果上 | chunk 1 |
 | T5 | 报告生成 | 生成到临时目录，包含 `#occupancy`、`#truth`、`#advice` 锚点，无 `&amp;amp;` 类双重转义 | chunk 1 |
 | T6 | 引擎 B 归属链路 | 装钩子成功；启动注册了 `Ctrl+Alt+F13` 的辅助进程，`SendInput` 触发后 3 秒内收到归属报告且 pid 正确。**若会话已锁定/无交互桌面，判为 INCONCLUSIVE 并打印原因，不算失败** | chunk 2 |
-| T7 | 引擎 C 吞键检测 | 合成一个未被吞的按键 → 判定为 `Delivered/NotGlobal` 分支正确；用一个测试用 LL 钩子吞掉 `Ctrl+Alt+Shift+F14` → 判定为 `SwallowedUpstream`。同样允许 INCONCLUSIVE | chunk 2 |
+| T7 | 引擎 C 吞键检测 | 判定纯函数七分支全部正确（含「引擎 B 未监听」「引擎 A 未扫描」两个必须给 `Inconclusive` 的分支）；真实 LL 钩子会话：喂事件的空闲键 → `NotGlobal`；布防不喂事件 → `SwallowedUpstream`；用测试用 LL 钩子吞掉 `Ctrl+Alt+Shift+F14` + `SendInput` → 端到端 `SwallowedUpstream`。同样允许 INCONCLUSIVE | chunk 2 |
 | T8 | 钩子知识库与自动归属策略 | 内嵌知识库 ≥10 条、hook/mixed 条目 ≥5；与扫描关联后至少产出带组合键的嫌疑与「仅供参考」条目；黑名单拒绝 Win+D/Alt+F4/Ctrl+Alt+Tab 且不误伤 Ctrl+Alt+M；dry-run 计划数在 1..max 内且不产出已按下的结果 | chunk 3 |
 | T9 | 按键监视器判定与只读解析 | 四分支判定、附加语义、Scancode Map（含 E0 扩展码）、卡住的修饰键全部正确，且不安装任何钩子 | chunk 4 |
 | T10 | 32 位归属链路 | 启动 `--selftest-target` 的 32 位宿主，向它的窗口 `PostMessage(WM_HOTKEY)` 后 3 秒内收到 pid 正确、`Bitness=x86` 的归属记录。**拿不到时判 INCONCLUSIVE 并说明卡在哪一步，不算失败**；`--no-hooks` 跳过 | chunk 5（1.3.0） |

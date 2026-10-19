@@ -27,6 +27,8 @@
 
 - **加载界面绝不安装任何钩子。** 只有用户点「开始监听」/「布防（安装钩子）」时才装。
   按钮文案必须写明「安装钩子」，页面必须用直白语言说明这一点。
+  2.0.0 起：钩子检测页布防时若引擎 B 未在监听，允许**弹确认框征得同意后**一并启动引擎 B
+  （确认框即用户的明确动作；判定逻辑对「引擎 B 未监听」只会给 Inconclusive，绝不硬报截胡）。
 - **引擎 A / D 与报告只读**：不写配置、不写注册表、不留注册（`RegisterHotKey` 成功必须立刻
   `UnregisterHotKey`）。
 - **绝不结束或暂停其它进程**：对照排除流程只记录观察结果，由用户自己退出可疑软件。
@@ -37,9 +39,10 @@
 - 本机**没有 .NET SDK**，不要用 `dotnet build`。构建走：
   `powershell -ExecutionPolicy Bypass -File build.ps1`
   （内部用 VS 的 Roslyn `csc.exe` 编 .NET Framework 4.8 + MSVC `cl` 编原生 DLL，再内嵌资源）
-- **验收必须在普通目录里跑**：把 `dist\HotkeyHound.exe` 复制到例如
-  `C:\Users\Constellation\AppData\Local\Temp\hs-verify\` 再执行。
-  工作区目录带 Low 完整性标签，直接在工作区里跑会写不了临时目录、钩子注入也会被 UIPI 拦。
+- **验收要在普通目录里跑**：把 `dist\HotkeyHound.exe` 复制到例如
+  `C:\Users\Constellation\AppData\Local\Temp\hs-verify\` 再执行，避免源码目录里的杂项
+  干扰临时目录与钩子注入的行为（早期 iCloud 工作区曾带 Low 完整性标签；现工作区已不是，
+  但「复制到干净目录再验收」的习惯保留）。
 - 改完必须验证（全绿才算完）：
   - `HotkeyHound.exe --selftest --no-hooks` → T1–T5 通过（不需要管理员、不装钩子）
   - 涉及钩子的改动：`HotkeyHound.exe --selftest` → **7/7**；跑之前先想清楚会不会影响用户机器，
