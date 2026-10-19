@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -125,7 +125,7 @@ namespace HotkeyHound.Core
         {
             if (text == null) throw new JsonLiteException("输入为 null");
             int pos = 0;
-            var v = ParseValue(text, ref pos);
+            var v = ParseValue(text, ref pos, 0);
             SkipWs(text, ref pos);
             return v;
         }
@@ -157,15 +157,22 @@ namespace HotkeyHound.Core
             }
         }
 
-        private static JsonValue ParseValue(string s, ref int i)
+        // 嵌套深度上限。这个解析器是互递归（ParseValue ↔ ParseObject/ParseArray），没有上限时，
+        // 一个畸形或被截断的配置文件（几万个 '['）就能把调用栈打穿——StackOverflowException
+        // 是 .NET 里唯一 catch 不住的异常，进程当场消失，外面 TryParse 的 catch 也救不回来。
+        // 真实的 PowerToys / OBS / Everything 配置最深不到 10 层，64 层足够宽松。
+        private const int MaxDepth = 64;
+
+        private static JsonValue ParseValue(string s, ref int i, int depth)
         {
+            if (depth > MaxDepth) throw new JsonLiteException("JSON 嵌套超过 " + MaxDepth + " 层，放弃解析");
             SkipWs(s, ref i);
             if (i >= s.Length) throw new JsonLiteException("JSON 意外结束");
             char c = s[i];
             switch (c)
             {
-                case '{': return ParseObject(s, ref i);
-                case '[': return ParseArray(s, ref i);
+                case '{': return ParseObject(s, ref i, depth);
+                case '[': return ParseArray(s, ref i, depth);
                 case '"': return MakeString(ParseString(s, ref i));
                 case 't':
                     Expect(s, ref i, "true");
@@ -188,7 +195,7 @@ namespace HotkeyHound.Core
             i += word.Length;
         }
 
-        private static JsonValue ParseObject(string s, ref int i)
+        private static JsonValue ParseObject(string s, ref int i, int depth)
         {
             var o = new JsonValue();
             o.Kind = JsonKind.Object;
@@ -203,7 +210,7 @@ namespace HotkeyHound.Core
                 SkipWs(s, ref i);
                 if (i >= s.Length || s[i] != ':') throw new JsonLiteException("位置 " + i + " 处期望 ':'");
                 i++;
-                JsonValue val = ParseValue(s, ref i);
+                JsonValue val = ParseValue(s, ref i, depth + 1);
                 o.AddMember(key, val);
                 SkipWs(s, ref i);
                 if (i >= s.Length) throw new JsonLiteException("对象未闭合");
@@ -213,7 +220,7 @@ namespace HotkeyHound.Core
             }
         }
 
-        private static JsonValue ParseArray(string s, ref int i)
+        private static JsonValue ParseArray(string s, ref int i, int depth)
         {
             var a = new JsonValue();
             a.Kind = JsonKind.Array;
@@ -223,7 +230,7 @@ namespace HotkeyHound.Core
             if (i < s.Length && s[i] == ']') { i++; return a; }
             while (true)
             {
-                a.Items.Add(ParseValue(s, ref i));
+                a.Items.Add(ParseValue(s, ref i, depth + 1));
                 SkipWs(s, ref i);
                 if (i >= s.Length) throw new JsonLiteException("数组未闭合");
                 if (s[i] == ',') { i++; continue; }

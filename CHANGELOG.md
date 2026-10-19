@@ -4,6 +4,85 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] — 2026-10-19 Hardening
+
+An adversarial audit of the two layers a normal test cannot reach — the injected native DLL and the
+32-bit companion process — found four defects that could damage or crash a machine and nine that failed
+silently. All are fixed. No UI or report-format changes.
+
+### Fixed: the injected hook DLL
+
+- **A 64 GiB memory request per injected process.** `CreateFileMappingW` takes `dwMaximumSizeHigh`
+  before `dwMaximumSizeLow`; the call passed `sizeof(HksControl), 0` — i.e. 16 in the *high* dword, a
+  16 × 4 GiB = 64 GiB pagefile-backed section. On most machines that just failed, so the DLL's
+  "create the mapping myself" fallback never worked; on a machine with a large pagefile it would have
+  pinned 64 GiB of commit charge in **every** process the hook injected into. Fixed to `0, 64` — and 64
+  is not arbitrary: a named section keeps the size its first creator asked for, and the controller maps
+  64 bytes, so a 16-byte section would have broken the controller instead.
+- **Permanent deafness after one failed initialisation.** The `INIT_ONCE` callback returned `TRUE` even
+  on failure, marking initialisation complete: that process would never report again, even after the
+  controller started. Failures now return `FALSE` (retry), capped at 8 attempts so a machine without a
+  controller does not re-map on every keystroke.
+- **The DLL could zero an armed control block.** It opened the shared memory read-write and wrote
+  `magic/arm/ctl*` when the magic did not match; the controller writes those four fields one at a time,
+  so an interleaving could clear `arm` just after it was set — attribution goes silent globally with
+  nothing in any log. The DLL now opens it **read-only** and never writes.
+- **Torn reads.** Four independent non-volatile reads could pair a new low dword with an old high dword
+  and produce a nonsense window handle. Fields are `volatile` now; the DLL reads `arm → magic → handle`
+  and the controller writes `ctlLo → ctlHi → magic → memory barrier → arm=1`.
+- **Layout regressions were unprovable.** `static_assert(sizeof == 16)` still passes when two fields are
+  swapped. Four `offsetof` assertions now pin each field — and immediately paid for themselves: the
+  first build failed because `offsetof` needs `<cstddef>`.
+- **Elevated runs received nothing.** UIPI drops messages from lower-integrity processes to a
+  higher-integrity window, so running as administrator left attribution silently dead. The control
+  window now lets exactly one message through (`ChangeWindowMessageFilterEx`).
+- `MapViewOfFile` maps the whole section (size 0) instead of exactly 16 bytes.
+
+### Fixed: the 32-bit companion process
+
+- Restarting attribution leaked an orphan helper holding a live hook (the launcher never reaped the old
+  one).
+- The forced-exit fallback could never run: `RequestQuit` took the stdout lock before starting the
+  1.5-second watchdog, so a blocked `Print` (full pipe) blocked the watchdog too.
+- stderr was redirected and never read — an unhandled .NET exception in the helper would fill the 4 KB
+  pipe buffer and hang the process.
+- Failures never signalled the ready event, so the caller waited out the full 4-second timeout instead
+  of getting a fast, explicit failure.
+- The stop/start handshake could leak a stale "ready" into the next session.
+- A stale stdout reader could publish state into a newer session (TOCTOU).
+- A `File.Delete` failure (a process still holding the old DLL) was swallowed, silently switching to a
+  second copy in another directory — two versions in play, with no warning.
+- The helper now lives in a **Job Object with `KILL_ON_JOB_CLOSE`**, so Windows reaps it even if the
+  controller is killed outright; the parent-PID watchdog stays as the second line.
+- Window handles were printed as signed decimals and parsed by a digits-only parser, so a handle with
+  bit 31 set arrived as 0 (and made the 32-bit self-test flaky).
+- `LoadLibrary` → `LoadLibraryEx(..., LOAD_WITH_ALTERED_SEARCH_PATH)` so the hook DLL's dependencies
+  cannot be planted next to the helper executable.
+
+### Fixed: robustness against malformed configuration
+
+- The hand-written JSON parser had no recursion limit. A corrupt or truncated app config (a few
+  thousand `[`) overflowed the stack — and `StackOverflowException` is the one .NET exception that
+  cannot be caught, so the process simply vanished. Depth is capped at 64 (real configs stay under 10);
+  exceeding it raises a normal, catchable exception. Verified: 200,000 `[` now returns "no data"
+  instead of killing the process.
+- Attribution records, hook-check records and comparison snapshots were unbounded. A hotkey registered
+  without `MOD_NOREPEAT` produces dozens of `WM_HOTKEY` messages per second while held, so an overnight
+  session could pile up six figures of records — growing memory and freezing the list view. They are
+  capped now (20,000 / 20,000 / 500) and the oldest are dropped with one log line.
+
+### Changed: CI proves the English build is English
+
+The smoke test used to look for one particular Chinese word in the English report. It now counts
+**every** CJK character in the generated English report and fails on a single one, printing the
+surrounding context.
+
+### Documentation
+
+- [`docs/code-review.md`](docs/code-review.md) restructured around this audit: what was checked, what
+  was found (with severity), what was fixed, and the risks that were accepted with reasons.
+- README now links the FAQ and the audit.
+
 ## [1.3.0] — 2026-10-18 Companion
 
 ### Added: attribution for 32-bit (WOW64) processes

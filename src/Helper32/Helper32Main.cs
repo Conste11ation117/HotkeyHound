@@ -35,6 +35,8 @@ internal static class Helper32Main
     private const uint SYNCHRONIZE = 0x00100000;
     private const uint FILE_MAP_READ = 0x0004;
     private const uint HKS_MAGIC = 0x484B5354;
+    private const uint LOAD_WITH_ALTERED_SEARCH_PATH = 0x00000008;
+    private const long MAX_TIMER_MILLISECONDS = 24L * 60L * 60L * 1000L;
     private const string MapName = "Local\\HotkeyHound.Ctl";
 
     private static readonly object OutputGate = new object();
@@ -53,11 +55,7 @@ internal static class Helper32Main
         catch (Exception) { }
 
         var options = new Options();
-        if (!options.Parse(args))
-        {
-            Print("HELPER32_ERROR bad_arguments");
-            return 2;
-        }
+        if (!options.Parse(args)) return 2;
 
         try
         {
@@ -85,14 +83,20 @@ internal static class Helper32Main
             StartControlBlockProbe();
 
             Print(string.Format(CultureInfo.InvariantCulture,
-                "HELPER32_READY pid={0} hwnd={1} hook={2} registered={3} regError={4} dllLoaded={5}",
-                Process.GetCurrentProcess().Id, _hwnd.ToInt64(), hookOk, _registered, regError,
+                "HELPER32_READY pid={0} hwnd=0x{1:X8} hook={2} registered={3} regError={4} dllLoaded={5}",
+                Process.GetCurrentProcess().Id, unchecked((uint)_hwnd.ToInt64()), hookOk, _registered, regError,
                 _hMod != IntPtr.Zero ? 1 : 0));
             if (hookError != null) Print("HELPER32_ERROR hook " + hookError);
 
             StartParentWatch(options.ParentPid);
             StartStdinWatch();
-            if (options.Seconds > 0) SetTimer(_hwnd, TIMER_ID, (uint)(options.Seconds * 1000), IntPtr.Zero);
+            if (options.Seconds > 0)
+            {
+                // 用 long 计算再夹取，避免秒数很大时 (uint)(Seconds * 1000) 溢出成几毫秒。
+                long timerMs = (long)options.Seconds * 1000L;
+                if (timerMs > MAX_TIMER_MILLISECONDS) timerMs = MAX_TIMER_MILLISECONDS;
+                SetTimer(_hwnd, TIMER_ID, (uint)timerMs, IntPtr.Zero);
+            }
 
             // 默认模式装不上钩子就没人需要这个进程：退出，让主程序明确记录降级原因。
             if (hookOk == 0 && !options.SelfTestTarget)
@@ -106,8 +110,14 @@ internal static class Helper32Main
             while (true)
             {
                 int r = GetMessageW(out msg, IntPtr.Zero, 0, 0);
-                if (r <= 0) break;
-                if (msg.message == WM_QUIT)
+                if (r == -1)
+                {
+                    Print("HELPER32_ERROR get_message err="
+                          + Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture));
+                    Cleanup();
+                    return 6;
+                }
+                if (r == 0)
                 {
                     Print("HELPER32_EXIT reason=quit_message");
                     break;
@@ -122,10 +132,8 @@ internal static class Helper32Main
                     Print("HELPER32_EXIT reason=timeout");
                     break;
                 }
-                if (msg.message == WM_HOTKEY)
-                {
-                    Print("HELPER32_GOT_HOTKEY id=" + msg.wParam.ToInt64().ToString(CultureInfo.InvariantCulture));
-                }
+                // WM_HOTKEY 统一由 WndProc 处理：消息循环里也打印一次会造成重复输出，
+                // 而且自测目标需要在第一次收到后立刻 UnregisterHotKey。
                 TranslateMessage(ref msg);
                 DispatchMessageW(ref msg);
             }
@@ -172,7 +180,7 @@ internal static class Helper32Main
         try { dllPath = Path.GetFullPath(dllPath); }
         catch (Exception) { }
 
-        _hMod = LoadLibraryW(dllPath);
+        _hMod = LoadLibraryExW(dllPath, IntPtr.Zero, LOAD_WITH_ALTERED_SEARCH_PATH);
         if (_hMod == IntPtr.Zero)
         {
             error = "load_library err=" + Marshal.GetLastWin32Error().ToString(CultureInfo.InvariantCulture) + " path=" + dllPath;
@@ -198,11 +206,21 @@ internal static class Helper32Main
 
     private static IntPtr WndProc(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam)
     {
-        if (msg == WM_HOTKEY)
-        {
-            Print("HELPER32_GOT_HOTKEY id=" + wParam.ToInt64().ToString(CultureInfo.InvariantCulture));
-        }
+        if (msg == WM_HOTKEY) ReportHotkey(wParam.ToInt64());
         return DefWindowProcW(hWnd, msg, wParam, lParam);
+    }
+
+    /// <summary>
+    /// 自测目标只借这个热键确认「钩子链确实能收到真实注册的热键」；收到第一次就注销，
+    /// 不留任何注册痕迹（AGENTS.md：RegisterHotKey 成功必须立刻 UnregisterHotKey）。
+    /// </summary>
+    private static void ReportHotkey(long id)
+    {
+        Print("HELPER32_GOT_HOTKEY id=" + id.ToString(CultureInfo.InvariantCulture));
+        if (_registered != 0)
+        {
+            if (UnregisterHotKey(_hwnd, 1)) _registered = 0;
+        }
     }
 
     private static void Cleanup()
@@ -371,28 +389,30 @@ internal static class Helper32Main
     }
 
     /// <summary>
-    /// 从任意线程请求退出：先投 WM_QUIT 让主线程体面清理；1.5 秒还没退就 Environment.Exit，
-    /// 保证父进程无论怎么死都不会留下这个进程。
+    /// 从任意线程请求退出。顺序很重要：先无锁抢占退出标志、立刻启动强制退出线程，
+    /// 最后才尝试 Print。Print 会抢 OutputGate，而主线程可能正卡在同一个锁里（stdout
+    /// 管道满、父进程不读）；如果先 Print，就轮到 RequestQuit 阻塞，兜底线程永远不会启动。
     /// </summary>
     private static void RequestQuit(string reason)
     {
-        lock (OutputGate)
-        {
-            if (_quitting != 0) return;
-            _quitting = 1;
-        }
-        Print("HELPER32_EXIT reason=" + reason);
-        try { PostThreadMessageW(MainThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero); }
-        catch (Exception) { }
+        if (Interlocked.Exchange(ref _quitting, 1) != 0) return;
 
         var t = new Thread(delegate ()
         {
-            Thread.Sleep(1500);
+            // 800 毫秒：正常路径靠 WM_QUIT 瞬间退出，这个只在主线程卡死时兜底；
+            // 父进程被强杀后宿主必须在 1 秒内消失，不能再等 1.5 秒。
+            Thread.Sleep(800);
             Environment.Exit(0);
         });
         t.IsBackground = true;
         t.Name = "hh32-forced-exit";
         t.Start();
+
+        try { PostThreadMessageW(MainThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero); }
+        catch (Exception) { }
+
+        // 尽力而为：Print 失败或阻塞都不影响上面的强制退出。
+        Print("HELPER32_EXIT reason=" + reason);
     }
 
     // ------------------------------------------------------------------ 输出
@@ -413,6 +433,11 @@ internal static class Helper32Main
 
     // ------------------------------------------------------------------ 命令行
 
+    private static void PrintUsage()
+    {
+        Print("HELPER32_USAGE --dll <path> [--parent <pid>] [--seconds <n>] [--selftest-target]");
+    }
+
     private sealed class Options
     {
         public string DllPath;
@@ -425,29 +450,58 @@ internal static class Helper32Main
             for (int i = 0; i < args.Length; i++)
             {
                 string a = args[i];
-                if (a == null) continue;
-                if (a == "--dll" && i + 1 < args.Length) { DllPath = args[++i]; }
-                else if (a == "--parent" && i + 1 < args.Length)
+                if (string.IsNullOrEmpty(a)) continue;
+                if (a == "--dll")
                 {
-                    int n;
-                    if (int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out n)) ParentPid = n;
-                    i++;
+                    if (i + 1 >= args.Length) return Bad("--dll needs a value");
+                    DllPath = args[++i];
                 }
-                else if (a == "--seconds" && i + 1 < args.Length)
+                else if (a == "--parent")
                 {
-                    int n;
-                    if (int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out n)) Seconds = n;
-                    i++;
+                    if (i + 1 >= args.Length) return Bad("--parent needs a value");
+                    if (!TryInt(args[++i], out ParentPid)) return Bad("--parent is not an integer");
                 }
-                else if (a == "--selftest-target") { SelfTestTarget = true; }
-                else if (a.StartsWith("--dll=", StringComparison.Ordinal)) { DllPath = a.Substring(6); }
+                else if (a == "--seconds")
+                {
+                    if (i + 1 >= args.Length) return Bad("--seconds needs a value");
+                    if (!TryInt(args[++i], out Seconds)) return Bad("--seconds is not an integer");
+                }
+                else if (a == "--selftest-target")
+                {
+                    SelfTestTarget = true;
+                }
+                else if (a.StartsWith("--dll=", StringComparison.Ordinal))
+                {
+                    DllPath = a.Substring(6);
+                    if (DllPath.Length == 0) return Bad("--dll needs a value");
+                }
                 else if (a.StartsWith("--parent=", StringComparison.Ordinal))
                 {
-                    int n;
-                    if (int.TryParse(a.Substring(9), NumberStyles.Integer, CultureInfo.InvariantCulture, out n)) ParentPid = n;
+                    if (!TryInt(a.Substring(9), out ParentPid)) return Bad("--parent is not an integer");
+                }
+                else if (a.StartsWith("--seconds=", StringComparison.Ordinal))
+                {
+                    if (!TryInt(a.Substring(10), out Seconds)) return Bad("--seconds is not an integer");
+                }
+                else
+                {
+                    // 未知开关必须显式失败：静默忽略会让上层以为参数生效了。
+                    return Bad("unknown option " + a);
                 }
             }
             return true;
+        }
+
+        private static bool Bad(string why)
+        {
+            Print("HELPER32_ERROR bad_arguments " + why);
+            PrintUsage();
+            return false;
+        }
+
+        private static bool TryInt(string text, out int value)
+        {
+            return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
         }
     }
 
@@ -462,7 +516,7 @@ internal static class Helper32Main
     private static extern IntPtr GetModuleHandleW(string name);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern IntPtr LoadLibraryW(string path);
+    private static extern IntPtr LoadLibraryExW(string path, IntPtr file, uint flags);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
     private static extern IntPtr GetProcAddress(IntPtr hMod, string proc);
@@ -514,7 +568,7 @@ internal static class Helper32Main
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SetTimer(IntPtr hWnd, int id, uint elapse, IntPtr proc);
 
-    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int GetMessageW(out MSG msg, IntPtr hWnd, uint min, uint max);
 
     [DllImport("user32.dll")]

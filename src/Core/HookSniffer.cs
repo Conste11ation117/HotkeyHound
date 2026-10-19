@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -145,6 +145,12 @@ namespace HotkeyHound.Core
         private readonly List<string> _recentKeys = new List<string>();
         private readonly List<HookCheckRecord> _records = new List<HookCheckRecord>();
         private readonly List<ComparisonSnapshot> _comparisons = new List<ComparisonSnapshot>();
+
+        // 吞键检测可以开着跑很久（用户一边用电脑一边观察），列表必须有上限：
+        // _recentKeys 早就限了 200 条，这两个却一直没有——长时间布防会一直堆内存，
+        // 界面的列表也会越拉越卡。上限按「远超人类按键速度」定，超了丢最早的。
+        private const int MaxRecords = 20000;
+        private const int MaxComparisons = 500;
 
         private Thread _thread;
         private uint _threadId;
@@ -480,6 +486,7 @@ namespace HotkeyHound.Core
                 s.Evidence = evidence;
                 s.Note = note;
                 _records.Add(record);
+                    if (_records.Count > MaxRecords) _records.RemoveRange(0, _records.Count - MaxRecords);
             }
 
             Say(L10n.F("sniffer.verdict.log", s.Combo.Display(), HookCheckRecord.VerdictName(verdict)));
@@ -529,7 +536,11 @@ namespace HotkeyHound.Core
                     : L10n.F("sniffer.compare.candList", list.Count, string.Join("、", list.ToArray())));
             }
 
-            lock (_gate) _comparisons.Add(snap);
+            lock (_gate)
+            {
+                _comparisons.Add(snap);
+                if (_comparisons.Count > MaxComparisons) _comparisons.RemoveRange(0, _comparisons.Count - MaxComparisons);
+            }
             return snap;
         }
     }

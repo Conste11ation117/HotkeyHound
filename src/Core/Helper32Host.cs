@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 
@@ -20,6 +22,9 @@ namespace HotkeyHound.Core
         public const string ExeResourceName = "HotkeyHound.Helper32.exe";
         public const string DllFileName = "HotkeyHound.Hook32.dll";
         public const string ExeFileName = "HotkeyHound.Helper32.exe";
+
+        private const int ERROR_ACCESS_DENIED = 5;
+        private const int ERROR_SHARING_VIOLATION = 32;
 
         private static string _cachedDll;
         private static string _cachedExe;
@@ -105,7 +110,13 @@ namespace HotkeyHound.Core
 
         private static string Extract(string resourceName, string fileName, string subDir, ref string cache)
         {
-            if (cache != null && File.Exists(cache)) return cache;
+            if (cache != null && File.Exists(cache))
+            {
+                // 命中缓存也要清一次：否则上一次释放失败留下的 notes/LastError 会继续显示。
+                _notes.Clear();
+                LastError = null;
+                return cache;
+            }
             _notes.Clear();
             LastError = null;
 
@@ -136,9 +147,27 @@ namespace HotkeyHound.Core
                     }
                     if (needWrite)
                     {
-                        // 覆盖前先确保没有别的进程正加载着它（否则会抛 IOException）
-                        try { File.Delete(target); }
-                        catch (Exception) { }
+                        // 覆盖前先确保没有别的进程正加载着它（否则会抛 IOException）。
+                        if (File.Exists(target))
+                        {
+                            try
+                            {
+                                File.Delete(target);
+                            }
+                            catch (Exception ex)
+                            {
+                                int code = ex.HResult & 0xFFFF;
+                                if (code == ERROR_SHARING_VIOLATION || code == ERROR_ACCESS_DENIED)
+                                {
+                                    // 文件被占用时换目录会留下两份不同版本的产物，下一次运行就更难解释；
+                                    // 这里必须明确失败，让调用方把「谁还加载着旧 DLL」报给用户。
+                                    LastError = L10n.F("helper32.note.dirFailed", target,
+                                        "Win32=" + code + " " + ex.GetType().Name + "：" + ex.Message);
+                                    _notes.Add(LastError);
+                                    return null;
+                                }
+                            }
+                        }
                         File.WriteAllBytes(target, bytes);
                     }
 
@@ -152,7 +181,15 @@ namespace HotkeyHound.Core
                 }
                 catch (Exception ex)
                 {
-                    _notes.Add(L10n.F("helper32.note.dirFailed", dir, ex.GetType().Name + "：" + ex.Message));
+                    int code = ex.HResult & 0xFFFF;
+                    string detail = "Win32=" + code + " " + ex.GetType().Name + "：" + ex.Message;
+                    if (code == ERROR_SHARING_VIOLATION || code == ERROR_ACCESS_DENIED)
+                    {
+                        LastError = L10n.F("helper32.note.dirFailed", dir, detail);
+                        _notes.Add(LastError);
+                        return null;
+                    }
+                    _notes.Add(L10n.F("helper32.note.dirFailed", dir, detail));
                 }
             }
 
@@ -179,24 +216,38 @@ namespace HotkeyHound.Core
     /// 32 位进程装 32 位 hook DLL 来覆盖。这个类负责释放并启动 HotkeyHound.Helper32.exe、
     /// 收集它的就绪/错误输出，并在 Stop 时确保它退出（stdin 送 q → 等 2 秒 → Kill）。
     /// 它是本程序自己拉起的子进程，结束它不违反「绝不结束别人的进程」。
+    ///
+    /// 另有一层强制回收：父进程把宿主放进 KILL_ON_JOB_CLOSE 的 Job Object，父进程被强杀时
+    /// 系统会替我们结束宿主；宿主自己等待父进程句柄的逻辑保留为第二道防线。
     /// </summary>
     public sealed class Helper32Runtime : IDisposable
     {
+        private const int JobObjectExtendedLimitInformation = 9;
+        private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000;
+
+        private static readonly object _jobGate = new object();
+        private static IntPtr _jobHandle = IntPtr.Zero;
+        private static bool _jobFailed;
+        private static string _jobFailure;
+
         private readonly object _gate = new object();
-        private readonly ManualResetEventSlim _readyEvent = new ManualResetEventSlim(false);
+        private readonly object _lifecycle = new object();
+        private ManualResetEventSlim _readyEvent = new ManualResetEventSlim(false);
 
         private Process _process;
         private Thread _reader;
-        private Action<string> _log;
+        private Thread _errReader;
+        private volatile Action<string> _log;
 
-        private volatile bool _ready;
-        private volatile bool _hookInstalled;
-        private volatile int _pid;
+        private bool _ready;
+        private bool _hookInstalled;
+        private int _pid;
         private long _hwnd;
         private string _lastLine;
+        private string _readyLine;
         private string _error;
-        private string _exePath;
-        private string _dllPath;
+        private volatile string _exePath;
+        private volatile string _dllPath;
         private string _ctlLine;
 
         public bool IsRunning
@@ -211,60 +262,83 @@ namespace HotkeyHound.Core
             }
         }
 
-        public bool Ready { get { return _ready; } }
-        public bool HookInstalled { get { return _hookInstalled; } }
-        public int Pid { get { return _pid; } }
-        public long WindowHandle { get { return _hwnd; } }
-        public string Error { get { return _error; } }
-        public string LastLine { get { return _lastLine; } }
-        public string ExePath { get { return _exePath; } }
-        public string DllPath { get { return _dllPath; } }
+        public bool Ready { get { lock (_gate) return _ready; } }
+        public bool HookInstalled { get { lock (_gate) return _hookInstalled; } }
+        public int Pid { get { lock (_gate) return _pid; } }
+        public long WindowHandle { get { lock (_gate) return _hwnd; } }
+        public string Error { get { lock (_gate) return _error; } }
+        public string LastError { get { return Error; } }
+        public string LastLine { get { lock (_gate) return _lastLine; } }
+        public string ReadyLine { get { lock (_gate) return _readyLine; } }
+        public string ExePath { get { lock (_gate) return _exePath; } }
+        public string DllPath { get { lock (_gate) return _dllPath; } }
 
         /// <summary>界面用的短状态文本；详细原因在日志里。</summary>
         public string StatusText
         {
             get
             {
-                if (IsRunning)
+                bool running;
+                bool hook;
+                int pid;
+                bool failed;
+                lock (_gate)
                 {
-                    return _hookInstalled
-                        ? L10n.F("helper32.ui.running", _pid)
+                    running = false;
+                    if (_process != null)
+                    {
+                        try { running = !_process.HasExited; }
+                        catch (Exception) { running = false; }
+                    }
+                    hook = _hookInstalled;
+                    pid = _pid;
+                    failed = _error != null;
+                }
+                if (running)
+                {
+                    return hook
+                        ? L10n.F("helper32.ui.running", pid)
                         : L10n.T("helper32.ui.noHook");
                 }
-                return _error == null ? L10n.T("helper32.ui.off") : L10n.T("helper32.ui.failed");
+                return failed ? L10n.T("helper32.ui.failed") : L10n.T("helper32.ui.off");
             }
         }
 
         public bool Start(int parentPid, string extraArgs, Action<string> log)
         {
-            lock (_gate)
+            lock (_lifecycle)
             {
-                _log = log;
-                _error = null;
-                _lastLine = null;
-                _ready = false;
-                _hookInstalled = false;
-                _pid = 0;
-                _hwnd = 0;
-                _ctlLine = null;
-                _readyEvent.Reset();
+                // 任何一次新的 Start 都先彻底结束旧宿主：否则旧进程成孤儿，旧 reader 也不再
+                // 抽干它的 stdout，管道写满后旧宿主会卡死在 Print 里。
+                StopInternal(log);
+
+                lock (_gate)
+                {
+                    _log = log;
+                    _error = null;
+                    _lastLine = null;
+                    _readyLine = null;
+                    _ctlLine = null;
+                    _ready = false;
+                    _hookInstalled = false;
+                    _pid = 0;
+                    _hwnd = 0;
+                    // 每次 Start 都换一个新事件实例：Stop 在旧实例上 Set 不会让下一次 WaitReady 假返回。
+                    _readyEvent = new ManualResetEventSlim(false);
+                }
 
                 _exePath = Helper32Locator.ExtractExe();
                 foreach (string note in Helper32Locator.Notes) Emit(note);
                 if (_exePath == null)
                 {
-                    _error = L10n.F("helper32.log.extractFailed", Helper32Locator.LastError);
-                    Emit(_error);
-                    return false;
+                    return Fail(L10n.F("helper32.log.extractFailed", Helper32Locator.LastError));
                 }
 
                 _dllPath = Helper32Locator.ExtractDll();
                 foreach (string note in Helper32Locator.Notes) Emit(note);
                 if (_dllPath == null)
                 {
-                    _error = L10n.F("helper32.log.extractFailed", Helper32Locator.LastError);
-                    Emit(_error);
-                    return false;
+                    return Fail(L10n.F("helper32.log.extractFailed", Helper32Locator.LastError));
                 }
 
                 var psi = new ProcessStartInfo();
@@ -285,30 +359,52 @@ namespace HotkeyHound.Core
                 }
                 catch (Exception) { }
 
+                Process started;
                 try
                 {
-                    _process = Process.Start(psi);
+                    started = Process.Start(psi);
                 }
                 catch (Exception ex)
                 {
-                    _error = L10n.F("helper32.log.startFailed", ex.GetType().Name + "：" + ex.Message);
-                    Emit(_error);
-                    return false;
+                    return Fail(L10n.F("helper32.log.startFailed", ex.GetType().Name + "：" + ex.Message));
                 }
-                if (_process == null)
+                if (started == null)
                 {
-                    _error = L10n.F("helper32.log.startFailed", "Process.Start 返回 null");
-                    Emit(_error);
-                    return false;
+                    return Fail(L10n.F("helper32.log.startFailed", "Process.Start 返回 null"));
                 }
 
-                try { _pid = _process.Id; } catch (Exception) { }
-                Emit(L10n.F("helper32.log.started", _pid, _exePath));
+                int pid = 0;
+                try { pid = started.Id; } catch (Exception) { }
+                lock (_gate)
+                {
+                    _process = started;
+                    _pid = pid;
+                }
+                Emit(L10n.F("helper32.log.started", pid, _exePath));
 
-                _reader = new Thread(ReadLoop);
-                _reader.IsBackground = true;
-                _reader.Name = "HotkeyHound-Helper32-Reader";
-                _reader.Start(_process);
+                // 系统级兜底：父进程被强杀时 Job 句柄关闭，宿主由内核回收。
+                AssignToJob(started);
+
+                try
+                {
+                    lock (_gate)
+                    {
+                        _reader = new Thread(ReadLoop);
+                        _reader.IsBackground = true;
+                        _reader.Name = "HotkeyHound-Helper32-Reader";
+                        _reader.Start(started);
+
+                        _errReader = new Thread(StdErrLoop);
+                        _errReader.IsBackground = true;
+                        _errReader.Name = "HotkeyHound-Helper32-StdErr";
+                        _errReader.Start(started);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    StopInternal(null);
+                    return Fail(L10n.F("helper32.log.startFailed", ex.GetType().Name + "：" + ex.Message));
+                }
                 return true;
             }
         }
@@ -316,40 +412,110 @@ namespace HotkeyHound.Core
         /// <summary>等宿主报出 HELPER32_READY；超时或钩子失败都只返回 false，不抛异常。</summary>
         public bool WaitReady(int timeoutMs, Action<string> log)
         {
-            _log = log;
+            if (log != null) _log = log;
+
+            ManualResetEventSlim ev;
+            lock (_gate) ev = _readyEvent;
             bool signaled = false;
-            try { signaled = _readyEvent.Wait(timeoutMs); }
+            try { signaled = ev.Wait(timeoutMs); }
             catch (Exception) { }
 
-            if (_error != null)
+            string error;
+            string lastLine;
+            string ctlLine;
+            int pid;
+            long hwnd;
+            bool hook;
+            lock (_gate)
             {
-                Emit(L10n.F("helper32.log.failed", _error));
+                error = _error;
+                lastLine = _lastLine;
+                ctlLine = _ctlLine;
+                pid = _pid;
+                hwnd = _hwnd;
+                hook = _hookInstalled;
+            }
+
+            if (error != null)
+            {
+                Emit(L10n.F("helper32.log.failed", error));
                 return false;
             }
             if (!signaled)
             {
-                Emit(L10n.F("helper32.log.timeout", timeoutMs, _lastLine ?? L10n.T("common.none")));
+                Emit(L10n.F("helper32.log.timeout", timeoutMs, lastLine ?? L10n.T("common.none")));
                 return false;
             }
-            if (!_hookInstalled)
+            if (!hook)
             {
-                Emit(L10n.F("helper32.log.readyNoHook", _lastLine ?? L10n.T("common.none")));
+                Emit(L10n.F("helper32.log.readyNoHook", lastLine ?? L10n.T("common.none")));
                 return false;
             }
-            Emit(L10n.F("helper32.log.ready", _pid, _hwnd, _ctlLine ?? L10n.T("common.none")));
+            Emit(L10n.F("helper32.log.ready", pid, hwnd, ctlLine ?? L10n.T("common.none")));
             return true;
         }
 
         public void Stop(Action<string> log)
         {
+            lock (_lifecycle)
+            {
+                StopInternal(log);
+            }
+        }
+
+        public void Dispose()
+        {
+            Stop(null);
+        }
+
+        private bool Fail(string message)
+        {
+            lock (_gate)
+            {
+                _error = message;
+                _ready = false;
+                _hookInstalled = false;
+                // 失败也是「等待结束」：WaitReady 必须立刻返回，而不是白等满超时。
+                _readyEvent.Set();
+            }
+            Emit(message);
+            return false;
+        }
+
+        private void StopInternal(Action<string> log)
+        {
+            if (log != null) _log = log;
+
             Process p;
+            Thread reader;
+            Thread errReader;
             lock (_gate)
             {
                 p = _process;
+                reader = _reader;
+                errReader = _errReader;
                 _process = null;
+                _reader = null;
+                _errReader = null;
+
+                _ready = false;
+                _hookInstalled = false;
+                _pid = 0;
+                _hwnd = 0;
+                _lastLine = null;
+                _readyLine = null;
+                _ctlLine = null;
+                _error = null;
+                // Set 与 Reset 都只在 _gate 里做，并且只作用于本次 Start 的事件实例。
+                _readyEvent.Set();
             }
-            if (p == null) return;
-            _log = log;
+
+            if (p == null)
+            {
+                JoinQuietly(reader, 600);
+                JoinQuietly(errReader, 600);
+                return;
+            }
 
             int pid = 0;
             try { pid = p.Id; } catch (Exception) { }
@@ -385,30 +551,21 @@ namespace HotkeyHound.Core
             }
             finally
             {
-                Thread reader = _reader;
-                _reader = null;
-                if (reader != null)
-                {
-                    try { if (reader.IsAlive) reader.Join(600); }
-                    catch (Exception) { }
-                }
+                JoinQuietly(reader, 800);
+                JoinQuietly(errReader, 800);
                 try { p.Dispose(); }
                 catch (Exception) { }
-
-                _ready = false;
-                _hookInstalled = false;
-                _pid = 0;
-                _hwnd = 0;
-                _readyEvent.Set();
             }
 
             if (graceful) Emit(L10n.F("helper32.log.exited", pid));
             else Emit(L10n.F("helper32.log.killed", pid));
         }
 
-        public void Dispose()
+        private static void JoinQuietly(Thread t, int milliseconds)
         {
-            Stop(null);
+            if (t == null) return;
+            try { if (t.IsAlive) t.Join(milliseconds); }
+            catch (Exception) { }
         }
 
         private void Emit(string message)
@@ -420,6 +577,13 @@ namespace HotkeyHound.Core
                 try { handler(message); }
                 catch (Exception) { }
             }
+        }
+
+        private void EmitDiagnostic(string message)
+        {
+            // 诊断文本本身没有对应的 L10n 键（本次改动不允许改 L10n.cs），
+            // 沿用现有 helper32.log.line 前缀，且只写英文技术信息，不散落中文字面量。
+            Emit(L10n.F("helper32.log.line", message));
         }
 
         private bool IsCurrent(Process p)
@@ -436,41 +600,148 @@ namespace HotkeyHound.Core
                 string line;
                 while ((line = p.StandardOutput.ReadLine()) != null)
                 {
-                    // Stop() 之后旧进程的输出不能再影响新一次 Start() 的状态。
-                    if (!IsCurrent(p)) return;
-                    _lastLine = line;
-                    if (line.StartsWith("HELPER32_READY", StringComparison.Ordinal))
+                    bool current;
+                    lock (_gate) current = object.ReferenceEquals(_process, p);
+                    if (!current)
                     {
-                        _pid = ExtractInt(line, "pid=", _pid);
-                        _hwnd = ExtractLong(line, "hwnd=", 0);
-                        _hookInstalled = ExtractInt(line, "hook=", 0) != 0;
-                        _ready = true;
-                        _readyEvent.Set();
+                        // 旧会话的管道也要抽干，只是不再写入当前状态/日志。
+                        continue;
                     }
-                    else if (line.StartsWith("HELPER32_CTL", StringComparison.Ordinal))
-                    {
-                        _ctlLine = line;
-                    }
-                    else if (line.StartsWith("HELPER32_ERROR", StringComparison.Ordinal))
-                    {
-                        _error = line;
-                    }
-                    Emit(L10n.F("helper32.log.line", line));
+                    HandleLine(p, line);
                 }
             }
             catch (Exception ex)
             {
-                if (IsCurrent(p)) _error = L10n.F("helper32.log.readFailed", ex.GetType().Name + "：" + ex.Message);
+                bool current;
+                string message = L10n.F("helper32.log.readFailed", ex.GetType().Name + "：" + ex.Message);
+                lock (_gate)
+                {
+                    current = object.ReferenceEquals(_process, p);
+                    if (current && _error == null) _error = message;
+                }
+                if (current) Emit(message);
             }
             finally
             {
-                // 进程退出（正常或崩溃）也要放行 WaitReady，不能让它一直等到超时。
-                // 只有「还是当前这个进程」时才这样做：Stop() 会自己 Set，避免串到下一次 Start。
-                if (IsCurrent(p))
+                bool current;
+                lock (_gate)
                 {
-                    _readyEvent.Set();
-                    Emit(L10n.T("helper32.log.stdoutEnded"));
+                    current = object.ReferenceEquals(_process, p);
+                    // 进程退出（正常或崩溃）也要放行 WaitReady，不能让它一直等到超时。
+                    if (current) _readyEvent.Set();
                 }
+                if (current) Emit(L10n.T("helper32.log.stdoutEnded"));
+            }
+        }
+
+        /// <summary>状态写入全部在 _gate 内完成，并在锁内复核「这条输出属于当前会话」。</summary>
+        private void HandleLine(Process p, string line)
+        {
+            lock (_gate)
+            {
+                if (!object.ReferenceEquals(_process, p)) return;
+                _lastLine = line;
+                if (line.StartsWith("HELPER32_READY", StringComparison.Ordinal))
+                {
+                    _pid = ExtractInt(line, "pid=", _pid);
+                    _hwnd = ExtractHwnd(line, "hwnd=", 0);
+                    _hookInstalled = ExtractInt(line, "hook=", 0) != 0;
+                    _readyLine = line;
+                    _ready = true;
+                    _readyEvent.Set();
+                }
+                else if (line.StartsWith("HELPER32_CTL", StringComparison.Ordinal))
+                {
+                    _ctlLine = line;
+                }
+                else if (line.StartsWith("HELPER32_ERROR", StringComparison.Ordinal))
+                {
+                    _error = line;
+                }
+            }
+            Emit(L10n.F("helper32.log.line", line));
+        }
+
+        private void StdErrLoop(object state)
+        {
+            var p = state as Process;
+            if (p == null) return;
+            try
+            {
+                string line;
+                while ((line = p.StandardError.ReadLine()) != null)
+                {
+                    if (!IsCurrent(p)) continue;
+                    Emit("[helper32:err] " + line);
+                }
+            }
+            catch (Exception) { }
+        }
+
+        // ------------------------------------------------------------ Job Object
+
+        private void AssignToJob(Process process)
+        {
+            string failure;
+            IntPtr job = GetOrCreateJob(out failure);
+            if (job == IntPtr.Zero)
+            {
+                EmitDiagnostic("job object unavailable (" + failure + "); falling back to parent PID watch");
+                return;
+            }
+            try
+            {
+                if (!AssignProcessToJobObject(job, process.Handle))
+                {
+                    int code = Marshal.GetLastWin32Error();
+                    EmitDiagnostic("AssignProcessToJobObject failed, Win32=" + code
+                                   + "; falling back to parent PID watch");
+                }
+            }
+            catch (Exception ex)
+            {
+                EmitDiagnostic("AssignProcessToJobObject threw " + ex.GetType().Name + ": " + ex.Message
+                               + "; falling back to parent PID watch");
+            }
+        }
+
+        /// <summary>Job 句柄在父进程存活期间一直持有；句柄关闭（父进程死亡）时系统结束宿主。</summary>
+        private static IntPtr GetOrCreateJob(out string failure)
+        {
+            failure = null;
+            lock (_jobGate)
+            {
+                if (_jobHandle != IntPtr.Zero) return _jobHandle;
+                if (_jobFailed)
+                {
+                    failure = _jobFailure;
+                    return IntPtr.Zero;
+                }
+
+                IntPtr job = CreateJobObjectW(IntPtr.Zero, null);
+                if (job == IntPtr.Zero)
+                {
+                    failure = "CreateJobObject Win32=" + Marshal.GetLastWin32Error();
+                    _jobFailed = true;
+                    _jobFailure = failure;
+                    return IntPtr.Zero;
+                }
+
+                var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                int size = Marshal.SizeOf(typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+                if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, ref info, size))
+                {
+                    failure = "SetInformationJobObject Win32=" + Marshal.GetLastWin32Error();
+                    try { CloseHandle(job); }
+                    catch (Exception) { }
+                    _jobFailed = true;
+                    _jobFailure = failure;
+                    return IntPtr.Zero;
+                }
+
+                _jobHandle = job;
+                return job;
             }
         }
 
@@ -485,12 +756,97 @@ namespace HotkeyHound.Core
             int i = line.IndexOf(key, StringComparison.Ordinal);
             if (i < 0) return fallback;
             i += key.Length;
+            int sign = 1;
+            if (i < line.Length && line[i] == '-')
+            {
+                sign = -1;
+                i++;
+            }
             int j = i;
             while (j < line.Length && char.IsDigit(line[j])) j++;
             if (j == i) return fallback;
             long v;
             if (!long.TryParse(line.Substring(i, j - i), out v)) return fallback;
-            return v;
+            return sign * v;
+        }
+
+        /// <summary>
+        /// 32 位窗口句柄按无符号十六进制输出（0x + 8 位）。旧版本打印十进制（bit31 为 1 时
+        /// 会符号扩展成负数），这里兼容两种格式，避免升级期间把合法句柄读成 0。
+        /// </summary>
+        private static long ExtractHwnd(string line, string key, long fallback)
+        {
+            int i = line.IndexOf(key, StringComparison.Ordinal);
+            if (i < 0) return fallback;
+            i += key.Length;
+
+            if (i + 1 < line.Length && line[i] == '0' && (line[i + 1] == 'x' || line[i + 1] == 'X'))
+            {
+                int start = i + 2;
+                int j = start;
+                while (j < line.Length && Uri.IsHexDigit(line[j])) j++;
+                if (j == start) return fallback;
+                ulong v;
+                if (!ulong.TryParse(line.Substring(start, j - start), NumberStyles.HexNumber,
+                                    System.Globalization.CultureInfo.InvariantCulture, out v))
+                {
+                    return fallback;
+                }
+                return unchecked((long)v);
+            }
+
+            return ExtractLong(line, key, fallback);
+        }
+
+        // ------------------------------------------------------------ Win32
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr CreateJobObjectW(IntPtr jobAttributes, string name);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetInformationJobObject(IntPtr job, int infoClass,
+            ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION info, int infoLength);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+        {
+            public long PerProcessUserTimeLimit;
+            public long PerJobUserTimeLimit;
+            public uint LimitFlags;
+            public UIntPtr MinimumWorkingSetSize;
+            public UIntPtr MaximumWorkingSetSize;
+            public uint ActiveProcessLimit;
+            public UIntPtr Affinity;
+            public uint PriorityClass;
+            public uint SchedulingClass;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IO_COUNTERS
+        {
+            public ulong ReadOperationCount;
+            public ulong WriteOperationCount;
+            public ulong OtherOperationCount;
+            public ulong ReadTransferCount;
+            public ulong WriteTransferCount;
+            public ulong OtherTransferCount;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+        {
+            public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
+            public IO_COUNTERS IoInfo;
+            public UIntPtr ProcessMemoryLimit;
+            public UIntPtr JobMemoryLimit;
+            public UIntPtr PeakProcessMemoryUsed;
+            public UIntPtr PeakJobMemoryUsed;
         }
     }
 }

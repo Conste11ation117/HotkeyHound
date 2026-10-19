@@ -203,6 +203,11 @@ docs\                     help documents (Chinese and English)
 - [`docs/help.zh-CN.md`](docs/help.zh-CN.md) / [`docs/help.en-US.md`](docs/help.en-US.md) — in-depth
   guides: what each engine does, how to read the report, how to chase a "key does nothing" problem,
   permissions and integrity levels, troubleshooting.
+- [`docs/faq.en-US.md`](docs/faq.en-US.md) — the questions people actually ask before trying this
+  ("the scan says it's free but my shortcut still does nothing", "why can't Windows just tell me",
+  "does it need admin", "does it record my keystrokes").
+- [`docs/code-review.md`](docs/code-review.md) — the audit behind the safety claims: what was checked,
+  what was found, what was fixed, and the risks that were accepted with reasons.
 - [`CHANGELOG.md`](CHANGELOG.md) — version history.
 - In the application: press **F1**.
 

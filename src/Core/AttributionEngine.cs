@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -66,6 +66,10 @@ namespace HotkeyHound.Core
         private readonly object _gate = new object();
         private readonly List<AttributionRecord> _records = new List<AttributionRecord>();
         private readonly Helper32Runtime _helper32 = new Helper32Runtime();
+
+        // 一次会话最多保留多少条归属记录。见 HandleReport 里为什么必须有上限。
+        private const int MaxRecords = 20000;
+        private bool _truncated;
 
         private Thread _thread;
         private volatile bool _stopRequested;
@@ -252,11 +256,15 @@ namespace HotkeyHound.Core
                 Say("SetWindowsHookEx 成功：hook=0x" + _hook.ToInt64().ToString("X") + "，控制窗口=0x" + _hwnd.ToInt64().ToString("X"));
 
                 // 写入共享内存，通知 DLL 可以上报。布局必须与位数无关：全是 4 字节字段。
+                // 写序必须与 HookDll.cpp 的读序（arm → magic → 句柄）配套：先写句柄与 magic，
+                // 加一道内存屏障，最后才把 arm 置 1。arm 是「可以用了」的唯一开关，必须最后写；
+                // 否则注入的 DLL 可能看到 arm=1 而句柄还没落地，那条报告就静默丢了。
                 long hwndValue = _hwnd.ToInt64();
-                Marshal.WriteInt32(_mapView, 0, unchecked((int)HKS_MAGIC));
-                Marshal.WriteInt32(_mapView, 4, 1);
-                Marshal.WriteInt32(_mapView, 8, unchecked((int)(hwndValue & 0xFFFFFFFFL)));
-                Marshal.WriteInt32(_mapView, 12, unchecked((int)((hwndValue >> 32) & 0xFFFFFFFFL)));
+                Marshal.WriteInt32(_mapView, 8, unchecked((int)(hwndValue & 0xFFFFFFFFL)));          // ctlLo
+                Marshal.WriteInt32(_mapView, 12, unchecked((int)((hwndValue >> 32) & 0xFFFFFFFFL))); // ctlHi
+                Marshal.WriteInt32(_mapView, 0, unchecked((int)HKS_MAGIC));                           // magic
+                System.Threading.Thread.MemoryBarrier();
+                Marshal.WriteInt32(_mapView, 4, 1);                                                  // arm=1
                 Say("共享内存 " + MapName + " 已就绪（magic=0x484B5354, arm=1, ctl=0x"
                     + _hwnd.ToInt64().ToString("X") + "）");
 
@@ -328,6 +336,21 @@ namespace HotkeyHound.Core
                 Say(LastError);
                 return false;
             }
+
+            // 提权运行时是「高权限控制器 + 低权限目标进程」这个方向：那些进程里注入的 DLL
+            // 投给我们的 WM_APP+1 会被 UIPI 直接拦掉，结果是提权后归属彻底失灵，而且
+            // 一个错都不报——看起来就像根本没有程序占用热键。只放行这一条上报消息。
+            try
+            {
+                if (!NativeMethods.ChangeWindowMessageFilterEx(
+                        _hwnd, (uint)WM_HOTKEY_REPORT, NativeMethods.MSGFLT_ALLOW, IntPtr.Zero))
+                {
+                    Say("提示：放行归属上报消息失败（错误码 " + Marshal.GetLastWin32Error()
+                        + "）；以管理员身份运行时可能收不到来自普通权限进程的报告。");
+                }
+            }
+            catch (Exception) { }
+
             return true;
         }
 
@@ -360,7 +383,23 @@ namespace HotkeyHound.Core
             if (rec.Combo == null) rec.Note = L10n.T("attr.note.badParam");
             else if (rec.ProcessName == null) rec.Note = L10n.T("attr.note.noProc");
 
-            lock (_gate) _records.Add(rec);
+            // 上限：别人注册的热键如果没带 MOD_NOREPEAT，按住不放每秒能产生几十条 WM_HOTKEY，
+            // 开一晚上就是十几万条——内存一直涨、界面列表也会卡死。两万条已经远超人类按键
+            // 速度，超了就丢最早的，并在日志里说一次（不静默丢数据）。
+            bool justTruncated = false;
+            lock (_gate)
+            {
+                _records.Add(rec);
+                if (_records.Count > MaxRecords)
+                {
+                    _records.RemoveRange(0, _records.Count - MaxRecords);
+                    if (!_truncated) { _truncated = true; justTruncated = true; }
+                }
+            }
+            if (justTruncated)
+            {
+                Say("归属记录已超过 " + MaxRecords + " 条上限，开始丢弃最早的记录（界面与报告只保留最近的）。");
+            }
             Say("归属报告：" + rec.Display() + (rec.ProcessPath == null ? "" : "  " + rec.ProcessPath));
 
             Action<AttributionRecord> h = RecordReceived;
@@ -567,6 +606,13 @@ namespace HotkeyHound.Core
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool DestroyWindow(IntPtr hWnd);
+
+        // UIPI 例外：Win7+ 才有这个导出（Vista 上是 ChangeWindowMessageFilter）。
+        // 参数是 (hwnd, message, MSGFLT_* 动作, CHANGEFILTERSTRUCT*)，最后一个传 NULL 即可。
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool ChangeWindowMessageFilterEx(IntPtr hwnd, uint message, uint action, IntPtr changeInfo);
+
+        public const uint MSGFLT_ALLOW = 1;
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         public static extern IntPtr DefWindowProcW(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);

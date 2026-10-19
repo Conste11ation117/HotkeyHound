@@ -182,6 +182,10 @@ docs\                     帮助文档（中/英）
 - [`docs/help.zh-CN.md`](docs/help.zh-CN.md) / [`docs/help.en-US.md`](docs/help.en-US.md)：
   深入一点的说明——每个引擎做什么、报告怎么读、「按了没反应」怎么追、权限与完整性级别怎么理解、
   常见问题排查。
+- [`docs/faq.zh-CN.md`](docs/faq.zh-CN.md)：大家真正会问的那些问题——「扫描说空闲但快捷键还是没用」、
+  「为什么 Windows 自己查不到」、「要不要管理员」、「会不会记录我的按键」。
+- [`docs/code-review.md`](docs/code-review.md)：安全承诺背后的审查记录——查了什么、发现了什么、
+  修了什么，以及哪些风险是有理由接受的。
 - [`CHANGELOG.md`](CHANGELOG.md)：版本历史。
 - 程序内按 **F1** 打开帮助。
 

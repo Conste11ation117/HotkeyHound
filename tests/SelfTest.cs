@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -786,12 +787,35 @@ namespace HotkeyHound
             int i = text.IndexOf(key, StringComparison.Ordinal);
             if (i < 0) return 0;
             i += key.Length;
-            int j = i;
-            while (j < text.Length && char.IsDigit(text[j])) j++;
-            if (j == i) return 0;
+
+            // 32 位宿主的窗口句柄按无符号十六进制输出（0x + 8 位）；旧的十进制格式继续兼容。
+            if (i + 1 < text.Length && text[i] == '0' && (text[i + 1] == 'x' || text[i + 1] == 'X'))
+            {
+                int start = i + 2;
+                int j = start;
+                while (j < text.Length && Uri.IsHexDigit(text[j])) j++;
+                if (j == start) return 0;
+                ulong u;
+                if (!ulong.TryParse(text.Substring(start, j - start), NumberStyles.HexNumber,
+                                    CultureInfo.InvariantCulture, out u))
+                {
+                    return 0;
+                }
+                return unchecked((long)u);
+            }
+
+            int sign = 1;
+            if (i < text.Length && text[i] == '-')
+            {
+                sign = -1;
+                i++;
+            }
+            int k = i;
+            while (k < text.Length && char.IsDigit(text[k])) k++;
+            if (k == i) return 0;
             long v;
-            if (!long.TryParse(text.Substring(i, j - i), out v)) return 0;
-            return v;
+            if (!long.TryParse(text.Substring(i, k - i), out v)) return 0;
+            return sign * v;
         }
 
         /// <summary>结束辅助进程；先温和地 PostMessage(WM_CLOSE)，超时才 Kill，绝不留僵尸。</summary>
@@ -882,6 +906,11 @@ namespace HotkeyHound
                 bool ready = host32.WaitReady(8000, hostLogger);
                 AppendLog(detail, "helper32", hostLog);
                 long hwnd = host32.WindowHandle;
+                if (hwnd == 0 && !string.IsNullOrEmpty(host32.ReadyLine))
+                {
+                    // 兜底：即使状态属性没拿到，也按同一套十六进制/十进制规则再解析一次原始就绪行。
+                    hwnd = ExtractLong(host32.ReadyLine, "hwnd=");
+                }
                 int targetPid = host32.Pid;
                 detail.Append("    32 位宿主 pid=").Append(targetPid)
                       .Append(" hwnd=0x").Append(hwnd.ToString("X"))
