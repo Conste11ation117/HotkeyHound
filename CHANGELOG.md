@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.1] — 2026-10-29 “Hurricane”
+
+### Fixed: an empty "Scancode Map remaps" box that looked broken
+
+- The key-monitor page has a read-only list of registry scancode remaps (`Scancode Map`). When the
+  machine has no remaps configured, the hint text was inserted as a data row inside the list, and
+  at high DPI the box only received 64–110 px — the result on screen was a bare header plus a
+  horizontal scrollbar, which reads as a broken control.
+- With no remaps the list is now hidden and a single explanatory line takes its place; both
+  read-only boxes get a 96 px minimum height (panels 90 px) so a title plus two rows are always
+  visible.
 ## [2.1.0] — 2026-10-29 “Hurricane”
 
 A bug-fix release for what daily use of 2.0.0 turned up: an undiagnosable crash dialog when a hook
