@@ -600,7 +600,10 @@ namespace HotkeyHound.Core
                 _verdicts.Clear();
                 _pending.Clear();
                 _lastModifiers = new ModifierSnapshot[0];
+                // 上一轮残留的修饰键状态会让新一轮一开始就报出「卡住的修饰键」。
+                Array.Clear(_hookModifierDown, 0, _hookModifierDown.Length);
             }
+            _shift = _ctrl = _alt = _win = false;
 
             _thread = new Thread(MonitorThreadProc);
             _thread.IsBackground = true;
@@ -613,12 +616,15 @@ namespace HotkeyHound.Core
             {
                 if (LastError == null) LastError = L10n.T("km.error.timeout");
                 Say(LastError);
+                // 超时不等于线程没起来：它可能正卡在装钩子的路上，不 Stop 就会留下一条无人管理的钩子。
+                Stop();
                 return false;
             }
             if (!_hookReady && !_rawReady)
             {
                 if (LastError == null) LastError = L10n.T("km.error.noLayers");
                 Say(LastError);
+                Stop();
                 return false;
             }
 
@@ -635,19 +641,47 @@ namespace HotkeyHound.Core
             }
             catch (Exception) { }
 
-            if (_threadId != 0)
-            {
-                try { NativeMethods.PostThreadMessageW(_threadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero); }
-                catch (Exception) { }
-            }
             Thread t = _thread;
+            uint tid = _threadId;
+
+            // 与引擎 C 同理：线程还没建好消息队列时 PostThreadMessageW 会失败，WM_QUIT 丢失就变成
+            // 「钩子留着、线程卡在 GetMessageW」。所以失败要重试，Join 超时后再补一轮。
+            if (t != null && tid != 0) PostQuitWithRetry(t, tid, 600);
+
             if (t != null)
             {
-                try { if (!t.Join(4000)) Say(L10n.T("km.error.stopTimeout")); }
+                try
+                {
+                    if (!t.Join(4000))
+                    {
+                        if (tid != 0) PostQuitWithRetry(t, tid, 600);
+                        if (!t.Join(1500)) Say(L10n.T("km.error.stopTimeout"));
+                    }
+                }
                 catch (Exception) { }
             }
-            _thread = null;
+            // 线程还活着就绝不把它丢掉：丢掉引用等于允许再 Start 一次，机器上会留下两条钩子，
+            // 而界面上只会看到后建的那一条。保留引用，IsRunning 仍为 true，调用方能据此提示用户。
+            if (_thread != null && !_thread.IsAlive)
+            {
+                _thread = null;
+                _threadId = 0;
+            }
             _ready = false;
+        }
+
+        private static void PostQuitWithRetry(Thread t, uint tid, int budgetMs)
+        {
+            DateTime deadline = DateTime.Now.AddMilliseconds(budgetMs);
+            while (t.IsAlive && DateTime.Now < deadline)
+            {
+                try
+                {
+                    if (NativeMethods.PostThreadMessageW(tid, WM_QUIT, IntPtr.Zero, IntPtr.Zero)) return;
+                }
+                catch (Exception) { return; }
+                Thread.Sleep(40);
+            }
         }
 
         public void Dispose()
@@ -832,7 +866,7 @@ namespace HotkeyHound.Core
                     bool up = wm == WM_KEYUP || wm == WM_SYSKEYUP;
                     if (down || up)
                     {
-                        UpdateModifiers(data.vkCode, down);
+                        UpdateModifiers(data.vkCode, down, true);
                         Observe(KeyMonitorLayer.LowLevelHook, data.vkCode, data.scanCode, data.flags, down, DateTime.Now);
                     }
                 }
@@ -862,7 +896,7 @@ namespace HotkeyHound.Core
             if (h != null) { try { h(e); } catch (Exception) { } }
 
             if (layer == KeyMonitorLayer.RawInput || layer == KeyMonitorLayer.WindowMessage)
-                UpdateModifiers(vk, down);
+                UpdateModifiers(vk, down, false);
 
             if (down && !KeyMonitorLogic.IsModifierVk(vk)) NotePress(layer, vk, scanCode, time);
         }
@@ -907,12 +941,14 @@ namespace HotkeyHound.Core
             Observe(KeyMonitorLayer.WindowMessage, (uint)wParam.ToInt32(), scan, flags, down, DateTime.Now);
         }
 
-        private void UpdateModifiers(uint vk, bool down)
+        /// <summary>fromHook=false 表示这一层不是低层钩子：组合键状态要更新，但「钩子层是否看到按下」
+        /// 这份观测只能由低层钩子写，否则 Raw Input/窗口消息会把漏事件掩盖掉。</summary>
+        private void UpdateModifiers(uint vk, bool down, bool fromHook)
         {
             lock (_gate)
             {
                 int idx = KeyMonitorLogic.ModifierIndex(vk);
-                if (idx >= 0) _hookModifierDown[idx] = down;
+                if (idx >= 0 && fromHook) _hookModifierDown[idx] = down;
             }
             switch (vk)
             {
@@ -959,7 +995,14 @@ namespace HotkeyHound.Core
 
         private void Settle(PendingPress p)
         {
-            if (p == null || p.Settled) return;
+            if (p == null) return;
+            // 定时器的两次回调可能重叠：结算前先在锁里原子占位，避免同一个按下被结算两次、
+            // 界面上出现两条重复结论。占位之后 p.Settled 同时也是「不要再接新事件」的标记。
+            lock (_gate)
+            {
+                if (p.Settled) return;
+                p.Settled = true;
+            }
 
             bool attributionChecked = false;
             AttributionRecord attribution = null;

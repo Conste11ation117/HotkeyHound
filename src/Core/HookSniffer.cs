@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -70,10 +70,11 @@ namespace HotkeyHound.Core
 
             if (!seenBySniffer)
             {
-                // LL 钩子根本没看到 → 上游截胡。这个结论不依赖引擎 B。
-                evidence = L10n.T("verdictLogic.swallowedUpstream.evidence");
-                note = L10n.T("verdictLogic.swallowedUpstream.note");
-                return HookVerdict.SwallowedUpstream;
+                // 引擎 C 只有低层钩子这一条观测链路：什么都没看到，既可能是用户没按，
+                // 也可能是上游吞掉了。没有 Raw Input 等独立输入证据，绝不能据此报「被吞」。
+                evidence = L10n.T("verdictLogic.noInput.evidence");
+                note = L10n.T("verdictLogic.noInput.note");
+                return HookVerdict.Inconclusive;
             }
 
             if (!scanDone)
@@ -192,7 +193,9 @@ namespace HotkeyHound.Core
 
         private ProbeSession _session;
 
-        private static LowLevelKeyboardProc _procKeepAlive;
+        // 委托必须由实例持有：静态字段在第二次 Start 时会被覆盖，旧钩子如果还没卸掉，
+        // 它持有的委托就可能被回收，回调地址变成野指针。
+        private LowLevelKeyboardProc _procKeepAlive;
 
         public event Action<string> Logged;
         public event Action<string> KeySeen;
@@ -276,6 +279,8 @@ namespace HotkeyHound.Core
             {
                 if (LastError == null) LastError = L10n.T("sniff.threadTimeout");
                 Say(LastError);
+                // 超时不代表线程没起来：它可能正卡在装钩子的路上，不 Stop 就会留下一条无人管的钩子。
+                Stop();
                 return false;
             }
 
@@ -312,8 +317,16 @@ namespace HotkeyHound.Core
                 }
                 catch (Exception) { }
             }
-            _thread = null;
-            _threadId = 0;
+            // 停止后不能把上一轮的布防会话留着：下次 Start 的新定时器会把它结算掉，
+            // 也就是「停止后还弹出一条旧结论」。
+            lock (_gate) _session = null;
+
+            // 与按键监视同理：线程还活着就绝不丢引用，否则允许再 Start 一次会留下两条低层钩子。
+            if (_thread != null && !_thread.IsAlive)
+            {
+                _thread = null;
+                _threadId = 0;
+            }
             _ready = false;
         }
 

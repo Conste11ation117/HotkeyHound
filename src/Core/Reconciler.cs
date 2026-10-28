@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text;
 using HotkeyHound.Core.Adapters;
 
 namespace HotkeyHound.Core
 {
-    public enum TruthKind { MatchesDeclared, DeclaredButNotRegistered, RegisteredButUnowned, FreeAndUndeclared }
+    public enum TruthKind { MatchesDeclared, DeclaredButNotRegistered, RegisteredButUnowned, SystemReserved, FreeAndUndeclared }
 
     public sealed class TruthRow
     {
@@ -49,6 +49,7 @@ namespace HotkeyHound.Core
                 case TruthKind.MatchesDeclared: return L10n.T("truth.kind.matched");
                 case TruthKind.DeclaredButNotRegistered: return L10n.T("truth.kind.declaredOnly");
                 case TruthKind.RegisteredButUnowned: return L10n.T("truth.kind.unowned");
+                case TruthKind.SystemReserved: return L10n.T("truth.kind.reserved");
                 default: return L10n.T("truth.kind.free");
             }
         }
@@ -63,6 +64,8 @@ namespace HotkeyHound.Core
                     return L10n.T("truth.explain.declaredOnly");
                 case TruthKind.RegisteredButUnowned:
                     return L10n.T("truth.explain.unowned");
+                case TruthKind.SystemReserved:
+                    return L10n.T("truth.explain.reserved");
                 default:
                     return L10n.T("truth.explain.free");
             }
@@ -114,6 +117,11 @@ namespace HotkeyHound.Core
                 {
                     row.Kind = TruthKind.DeclaredButNotRegistered;
                     row.Evidence = L10n.T("truth.evidence.config");
+                }
+                else if (occ.Occupied && hint != null)
+                {
+                    row.Kind = TruthKind.SystemReserved;
+                    row.Evidence = L10n.T("truth.evidence.measured");
                 }
                 else if (occ.Occupied)
                 {
@@ -251,6 +259,9 @@ namespace HotkeyHound.Core
                         }
                         return sb.ToString();
                     }
+
+                case TruthKind.SystemReserved:
+                    return L10n.T("truth.note.reserved");
 
                 default:
                     return L10n.T("truth.note.free");

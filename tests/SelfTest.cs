@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -148,10 +148,17 @@ namespace HotkeyHound
             samples.Add(new KeyCombo(false, true, true, false, 0x4D));   // Ctrl+Alt+M
             samples.Add(new KeyCombo(true, false, false, true, 0x86));   // Win+Shift+F23
             samples.Add(new KeyCombo(false, false, true, false, 0x73));  // Alt+F4
+            samples.Add(new KeyCombo(true, false, false, false, 0x13));  // Win+Break
+            samples.Add(new KeyCombo(false, false, false, false, 0x2C)); // PrintScreen
+            samples.Add(new KeyCombo(true, false, false, true, 0x2C));   // Win+Shift+PrtScn
             samples.Add(new KeyCombo(false, true, false, true, 0x1B));   // Ctrl+Shift+Esc
             samples.Add(new KeyCombo(true, false, false, false, 0x24));  // Win+Home
             samples.Add(new KeyCombo(false, true, false, false, 0xBB));  // Ctrl+=+
             samples.Add(new KeyCombo(false, false, false, false, 0x6B)); // Num+
+            samples.Add(new KeyCombo(false, false, false, false, 0x6C)); // NumSeparator
+            samples.Add(new KeyCombo(false, false, false, false, 0x6D)); // Num-
+            samples.Add(new KeyCombo(false, false, false, false, 0x6E)); // Num.
+            samples.Add(new KeyCombo(false, false, false, false, 0x6F)); // Num/
             samples.Add(new KeyCombo(true, false, true, true, 0x31));    // Win+Alt+Shift+1
             samples.Add(new KeyCombo(false, true, true, true, 0x01));    // 无效 VK，仅测格式化
             samples.Add(new KeyCombo(false, false, false, false, 0xC0)); // `~
@@ -183,9 +190,21 @@ namespace HotkeyHound
                 else failures.Add("VK 列表往返失败：" + s + " → " + c.Display());
             }
 
-            bool pass = ok == samples.Count && vkOk == vkSamples.Length;
-            string msg = string.Format("格式化/解析往返 {0}/{1} 通过，VK 列表往返 {2}/{3} 通过",
-                                       ok, samples.Count, vkOk, vkSamples.Length);
+            string[] numpadNames = new string[] { "NumSeparator", "Num-", "Num.", "Num/" };
+            bool numpadOk = true;
+            for (int i = 0; i < numpadNames.Length; i++)
+            {
+                string actual = VkNames.Name((uint)(0x6C + i));
+                if (actual != numpadNames[i])
+                {
+                    numpadOk = false;
+                    failures.Add("VK 0x" + (0x6C + i).ToString("X2") + " 名称应为 " + numpadNames[i] + "，实际 " + actual);
+                }
+            }
+
+            bool pass = ok == samples.Count && vkOk == vkSamples.Length && numpadOk;
+            string msg = string.Format("格式化/解析往返 {0}/{1} 通过，VK 列表往返 {2}/{3} 通过，小键盘名称={4}",
+                                       ok, samples.Count, vkOk, vkSamples.Length, numpadOk ? "正确" : "错误");
             if (!pass) msg += "；失败项：" + string.Join(" | ", failures.ToArray());
             Add("T1", "VK 表与组合键格式化/解析往返", pass, msg);
         }
@@ -332,7 +351,7 @@ namespace HotkeyHound
             foreach (TruthKind k in new TruthKind[]
             {
                 TruthKind.MatchesDeclared, TruthKind.DeclaredButNotRegistered,
-                TruthKind.RegisteredButUnowned, TruthKind.FreeAndUndeclared
+                TruthKind.RegisteredButUnowned, TruthKind.SystemReserved, TruthKind.FreeAndUndeclared
             })
             {
                 string text = TruthTable.KindExplain(k);
@@ -358,10 +377,22 @@ namespace HotkeyHound
             bool ptInstalled = File.Exists(new PowerToysKeyboardManagerAdapter().ConfigPath);
             bool ptOk = !ptInstalled || (ptTotal > 0 && ptMatched == ptTotal);
 
-            bool pass = table.Rows.Count >= 1000 && bucketExplained && ptOk;
+            var reservedProbe = new List<OccupancyResult>();
+            reservedProbe.Add(new OccupancyResult { Combo = KeyCombo.Parse("Alt+F4"), Occupied = true, Win32Error = 1409 });
+            TruthTable reservedTable = Reconciler.Build(reservedProbe, new List<DeclaredHotkey>(), new List<DeclaredHotkey>(), null);
+            bool reservedOk = reservedTable.Rows.Count == 1
+                && reservedTable.Rows[0].Kind == TruthKind.SystemReserved
+                && reservedTable.Rows[0].Note == L10n.T("truth.note.reserved");
+            int reservedParsed = SystemReservedTable.Reserved().Count;
+            bool reservedCatalogOk = reservedParsed == SystemReservedTable.EntryCount;
+
+            bool pass = table.Rows.Count >= 1000 && bucketExplained && ptOk && reservedOk && reservedCatalogOk;
             string msg = string.Format(
-                "真相表 {0} 行（要求 ≥1000）；四类说明文本齐备={1}；声明 {2} 条（其中 PowerToys {3} 条，能对到底表 {4} 条）；候选进程 {5} 个{6}",
-                table.Rows.Count, bucketExplained ? "是" : "否", config.Declared.Count, ptTotal,
+                "真相表 {0} 行（要求 ≥1000）；五类说明文本齐备={1}；Alt+F4 系统保留分类={2}；"
+                + "内置表解析 {3}/{4}；声明 {5} 条（其中 PowerToys {6} 条，能对到底表 {7} 条）；候选进程 {8} 个{9}",
+                table.Rows.Count, bucketExplained ? "是" : "否", reservedOk ? "正确" : "错误",
+                reservedParsed, SystemReservedTable.EntryCount,
+                config.Declared.Count, ptTotal,
                 ptMatched < 0 ? "n/a" : ptMatched.ToString(), candidates.Count,
                 ptInstalled ? "" : "；本机未安装 PowerToys，声明核对跳过");
             Add("T4", "真相表", pass, msg);
@@ -512,6 +543,18 @@ namespace HotkeyHound
                 detail.Append("附加语义 ").Append(extras).Append("/3；");
             }
             else detail.Append("附加语义 3/3；");
+
+            // 引擎 C 没有独立设备层证据时，未收到事件只能给无法判定，不能冤枉上游钩子。
+            if (HookVerdictLogic.Decide(false, false, false, true, true, true, out evidence, out note)
+                == HookVerdict.Inconclusive)
+            {
+                detail.Append("无输入不误判；");
+            }
+            else
+            {
+                pass = false;
+                detail.Append("无输入被误判为吞键；");
+            }
 
             // 构造的 Scancode Map：CapsLock(0x3A) ↔ 左 Ctrl(0x1D)，条数含结尾空项。
             byte[] sample = new byte[]
@@ -1191,7 +1234,7 @@ namespace HotkeyHound
             var b6 = HookVerdictLogic.Decide(true, true, false, true, false, true, out ev, out note);
             var b7 = HookVerdictLogic.Decide(true, false, false, true, true, false, out ev, out note);
 
-            if (b1 != HookVerdict.SwallowedUpstream) problems.Add("分支1（没看到）=" + b1);
+            if (b1 != HookVerdict.Inconclusive) problems.Add("分支1（没看到）=" + b1);
             if (b2 != HookVerdict.SwallowedBeforeHotkey) problems.Add("分支2（看到+占用+无归属）=" + b2);
             if (b3 != HookVerdict.Delivered) problems.Add("分支3（看到+归属）=" + b3);
             if (b4 != HookVerdict.NotGlobal) problems.Add("分支4（看到+未占用）=" + b4);
@@ -1254,17 +1297,17 @@ namespace HotkeyHound
                     problems.Add("会话1 期望 NotGlobal，实际 " + (v1 == null ? "未结算" : v1.Verdict.ToString()));
                 }
 
-                // ---- C2：布防但不喂任何事件 → LL 钩子没看到 → 应判 SwallowedUpstream
+                // ---- C2：布防但不喂任何事件 → LL 钩子没看到 → 应判 Inconclusive
                 int idx2;
                 lock (c1Records) idx2 = c1Records.Count;
                 bool armed2 = sniffer.Arm(c2Combo);
                 HookCheckRecord v2 = WaitVerdict(c1Records, c2Combo, idx2, 6000);
                 detail.Append("    会话2（不喂事件）：布防=").Append(armed2)
                       .Append("，结论=").Append(v2 == null ? "(超时未结算)" : HookCheckRecord.VerdictName(v2.Verdict))
-                      .Append("（等价于「按键没到达本程序的钩子」）\r\n");
-                if (v2 == null || v2.Verdict != HookVerdict.SwallowedUpstream)
+                      .Append("（没有输入证据，不能据此判断吞键）\r\n");
+                if (v2 == null || v2.Verdict != HookVerdict.Inconclusive)
                 {
-                    problems.Add("会话2 期望 SwallowedUpstream，实际 " + (v2 == null ? "未结算" : v2.Verdict.ToString()));
+                    problems.Add("会话2 期望 Inconclusive，实际 " + (v2 == null ? "未结算" : v2.Verdict.ToString()));
                 }
 
                 // ---- C3：真的装一个上层 LL 钩子吞掉 Ctrl+Alt+Shift+F16，再用 SendInput 打一次
@@ -1303,9 +1346,9 @@ namespace HotkeyHound
                                 ? "SendInput 没能把按键送进桌面（会话可能已锁定）"
                                 : "SendInput 送出的事件根本没到达任何 LL 钩子（会话可能已锁定，合成输入被丢弃）";
                         }
-                        else if (v3 == null || v3.Verdict != HookVerdict.SwallowedUpstream)
+                        else if (v3 == null || v3.Verdict != HookVerdict.Inconclusive)
                         {
-                            problems.Add("会话3 期望 SwallowedUpstream，实际 " + (v3 == null ? "未结算" : v3.Verdict.ToString()));
+                            problems.Add("会话3 期望 Inconclusive，实际 " + (v3 == null ? "未结算" : v3.Verdict.ToString()));
                         }
                     }
                 }
@@ -1314,7 +1357,7 @@ namespace HotkeyHound
                 var sb = new StringBuilder();
                 sb.Append("七分支判定逻辑全部正确；真实 WH_KEYBOARD_LL 钩子安装成功（句柄 0x")
                   .Append(sniffer.HookHandle.ToInt64().ToString("X")).Append("）；")
-                  .Append("真实布防会话 2 次（NotGlobal / SwallowedUpstream）").Append(pass ? "均正确" : "有问题");
+                  .Append("真实布防会话 2 次（NotGlobal / Inconclusive）").Append(pass ? "均正确" : "有问题");
                 if (c3Skipped) sb.Append("；端到端真实吞键测试 INCONCLUSIVE（").Append(c3Reason).Append("）");
                 else sb.Append("；端到端真实吞键测试（上层 LL 钩子 + SendInput）通过");
                 if (!pass) sb.Append("。问题：").Append(string.Join("；", problems.ToArray()))

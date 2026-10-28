@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -157,8 +157,8 @@ namespace HotkeyHound.Core
             {
                 if (LastError == null) LastError = L10n.T("attrib.threadTimeout");
                 Say(LastError);
-                try { _helper32.Stop(Say); }
-                catch (Exception) { }
+                // 超时不代表线程没起来：它可能正卡在装钩子的路上，不 Stop 就会留下一条无人管的全局钩子。
+                Stop();
                 return false;
             }
 
@@ -182,7 +182,8 @@ namespace HotkeyHound.Core
                 try { if (!t.Join(4000)) Say(L10n.T("attrib.threadJoinTimeout")); }
                 catch (Exception) { }
             }
-            _thread = null;
+            // 与引擎 C / 按键监视同理：线程还活着就绝不丢掉引用，否则下一次 Start 会装上第二条全局钩子。
+            if (_thread != null && !_thread.IsAlive) _thread = null;
             _ready = false;
 
             // 32 位宿主是本程序自己拉起的子进程：必须在这里结束它，绝不留僵尸。

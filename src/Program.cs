@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 using HotkeyHound.Core;
 
@@ -161,9 +162,23 @@ namespace HotkeyHound
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+        private static int _unhandledDialogShown;
+
         [STAThread]
         public static int Main(string[] args)
         {
+            // UI 线程的异常交给下面的处理器：不要让 CLR 弹出原始「未处理的异常」对话框。
+            // 后台线程的异常无法恢复，但至少把完整堆栈写进 error.log，用户能把它发回来。
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += delegate (object s, ThreadExceptionEventArgs e)
+            {
+                ReportUnhandled(e.Exception, false);
+            };
+            AppDomain.CurrentDomain.UnhandledException += delegate (object s, UnhandledExceptionEventArgs e)
+            {
+                ReportUnhandled(e.ExceptionObject as Exception, true);
+            };
+
             // 任何未捕获的异常都不能让进程挂起在 Windows 错误报告对话框上，
             // 必须转成明确的退出码并打印原因。
             try
@@ -174,8 +189,56 @@ namespace HotkeyHound
             {
                 try { Console.Error.WriteLine(L10n.F("cli.except", ex)); }
                 catch (Exception) { }
+                ReportUnhandled(ex, true);
                 return 1;
             }
+        }
+
+        /// <summary>
+        /// 统一兜底：写一份可定位的错误日志，只弹一次简明提示，不把一整页堆栈甩给用户。
+        /// 返回日志路径（写不进去时为空）。
+        /// </summary>
+        private static string WriteCrashLog(Exception ex)
+        {
+            try
+            {
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                          "HotkeyHound");
+                if (string.IsNullOrEmpty(dir)) dir = Path.Combine(Path.GetTempPath(), "HotkeyHound");
+                Directory.CreateDirectory(dir);
+                string path = Path.Combine(dir, "error.log");
+                string body = "==== " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  v" + AppInfo.Version
+                              + " ====\r\n" + (ex == null ? "(no exception object)" : ex.ToString()) + "\r\n\r\n";
+                File.AppendAllText(path, body, new UTF8Encoding(true));
+                return path;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void ReportUnhandled(Exception ex, bool fatal)
+        {
+            string logPath = WriteCrashLog(ex);
+            if (Interlocked.Exchange(ref _unhandledDialogShown, 1) != 0) return;
+            string message = ex == null ? "" : ex.Message;
+            string body;
+            try
+            {
+                body = L10n.F("ui.crash.body", message, logPath ?? L10n.T("common.none"));
+            }
+            catch (Exception)
+            {
+                body = "HotkeyHound hit an unexpected error. / 程序遇到未处理的错误。\r\n\r\n"
+                       + message + "\r\n\r\nLog / 日志：" + (logPath ?? "(unavailable)");
+            }
+            try
+            {
+                MessageBox.Show(body, AppInfo.Title, MessageBoxButtons.OK,
+                                fatal ? MessageBoxIcon.Error : MessageBoxIcon.Warning);
+            }
+            catch (Exception) { }
         }
 
         private static int RunCore(string[] args)
@@ -319,12 +382,7 @@ namespace HotkeyHound
             }
             catch (Exception ex)
             {
-                try
-                {
-                    MessageBox.Show(L10n.F("cli.except", ex), AppInfo.Title,
-                                    MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-                catch (Exception) { }
+                ReportUnhandled(ex, true);
                 return 1;
             }
         }
@@ -925,7 +983,8 @@ namespace HotkeyHound
             var occupied = new List<TruthRow>();
             foreach (TruthRow r in s.Truth.Rows)
             {
-                if (r.Kind == TruthKind.MatchesDeclared || r.Kind == TruthKind.RegisteredButUnowned) occupied.Add(r);
+                if (r.Kind == TruthKind.MatchesDeclared || r.Kind == TruthKind.RegisteredButUnowned
+                    || r.Kind == TruthKind.SystemReserved) occupied.Add(r);
             }
             for (int i = 0; i < occupied.Count; i++)
             {

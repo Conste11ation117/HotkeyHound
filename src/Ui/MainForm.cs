@@ -13,11 +13,13 @@ namespace HotkeyHound.Ui
         public LogSink Log { get; private set; }
 
         private ScanSnapshot _snapshot;
-        private TabControl _tabs;
+        private readonly List<Button> _navButtons = new List<Button>();
+        private readonly List<Control> _pages = new List<Control>();
+        private Panel _content;
         private TextBox _logBox;
         private StatusStrip _status;
         private ToolStripStatusLabel _statusLabel;
-        private ToolStrip _toolbar;
+        private Control _toolbar;
 
         private OverviewTab _overviewTab;
         private TruthTab _truthTab;
@@ -105,21 +107,23 @@ namespace HotkeyHound.Ui
         {
             System.IO.Directory.CreateDirectory(dir);
             ScreenshotTrace(dir, L10n.F("ui.screenshot.tabs",
-                                        _tabs == null ? -1 : _tabs.TabPages.Count,
+                                        _pages == null ? -1 : _pages.Count,
                                         ClientSize.Width, ClientSize.Height));
             string[] names = new string[]
             {
                 "01-overview", "02-attribution", "03-hookcheck", "04-keymonitor",
                 "05-truth", "06-hooksuspects", "07-report"
             };
-            for (int i = 0; i < _tabs.TabPages.Count && i < names.Length; i++)
+            for (int i = 0; i < _pages.Count && i < names.Length; i++)
             {
-                _tabs.SelectedIndex = i;
+                SelectPage(i);
                 Application.DoEvents();
                 System.Threading.Thread.Sleep(400);
                 Application.DoEvents();
-                int w = ClientSize.Width;
-                int h = ClientSize.Height;
+                // DrawToBitmap 会连标题栏一起画进结果；用 ClientSize 作位图会把底部状态栏
+                // 裁掉约一个标题栏的高度。这里按窗口外框取尺寸，截图才和屏幕上看到的一致。
+                int w = Width;
+                int h = Height;
                 ScreenshotTrace(dir, L10n.F("ui.screenshot.render", names[i], i, w, h));
                 if (w <= 0 || h <= 0) break;
                 using (var bmp = new Bitmap(w, h))
@@ -147,8 +151,8 @@ namespace HotkeyHound.Ui
 
             Text = L10n.F("ui.title", AppInfo.Title, AppInfo.Description);
             // 窗口不超过屏幕工作区：避免窗口比屏幕还大导致内容看不全。
-            ClientSize = UiTheme.ClampToWorkingArea(new Size(1080, 720), 60);
-            MinimumSize = new Size(760, 520);
+            ClientSize = UiTheme.ClampToWorkingArea(new Size(1240, 820), 60);
+            MinimumSize = new Size(940, 640);
             StartPosition = FormStartPosition.CenterScreen;
             KeyPreview = true;
             BackColor = UiTheme.Background;
@@ -222,15 +226,9 @@ namespace HotkeyHound.Ui
 
         private void BuildLayout()
         {
-            var split = new SplitContainer();
-            split.Dock = DockStyle.Fill;
-            split.Orientation = Orientation.Horizontal;
-            split.SplitterDistance = 560;
-            split.Panel2MinSize = 90;
-            split.FixedPanel = FixedPanel.Panel2;
-
-            _tabs = new ThemedTabControl();
-            _tabs.Dock = DockStyle.Fill;
+            _content = new Panel();
+            _content.Dock = DockStyle.Fill;
+            _content.Padding = new Padding(UiTheme.SpaceM, UiTheme.SpaceS, UiTheme.SpaceM, UiTheme.SpaceM);
 
             _overviewTab = new OverviewTab(this);
             _truthTab = new TruthTab(this);
@@ -240,37 +238,69 @@ namespace HotkeyHound.Ui
             _hookSuspectsTab = new HookSuspectsTab(this);
             _reportTab = new ReportTab(this);
 
-            _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.overview"), _overviewTab));
-            _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.attribution"), _attributionTab));
-            _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.hookcheck"), _hookCheckTab));
-            _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.keymonitor"), _keyMonitorTab));
-            _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.truth"), _truthTab));
-            _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.hooksuspects"), _hookSuspectsTab));
-            _tabs.TabPages.Add(MakePage(L10n.T("ui.tab.report"), _reportTab));
+            string[] titles = new string[]
+            {
+                L10n.T("ui.tab.overview"), L10n.T("ui.tab.attribution"), L10n.T("ui.tab.hookcheck"),
+                L10n.T("ui.tab.keymonitor"), L10n.T("ui.nav.truth"), L10n.T("ui.tab.hooksuspects"),
+                L10n.T("ui.tab.report")
+            };
+            Control[] contents = new Control[]
+            {
+                _overviewTab, _attributionTab, _hookCheckTab, _keyMonitorTab,
+                _truthTab, _hookSuspectsTab, _reportTab
+            };
+            for (int i = 0; i < contents.Length; i++) AddPage(contents[i]);
 
-            split.Panel1.Controls.Add(_tabs);
+            var body = new Panel();
+            body.Dock = DockStyle.Fill;
+            body.Controls.Add(_content);
+            body.Controls.Add(BuildSidebar(titles));
 
-            var logPanel = new GroupBox();
-            logPanel.Text = L10n.T("ui.log.group");
-            logPanel.Dock = DockStyle.Fill;
-            logPanel.Padding = new Padding(6);
+            // 日志默认折叠成一条可点击的栏：把垂直空间留给主内容，需要排错时再展开。
+            var logPanel = new Panel();
+            logPanel.Dock = DockStyle.Bottom;
+            logPanel.Height = 36;
+            logPanel.Padding = new Padding(10, 0, 10, 0);
+            logPanel.Tag = "surface";
 
             _logBox = new TextBox();
             _logBox.Multiline = true;
             _logBox.ReadOnly = true;
             _logBox.ScrollBars = ScrollBars.Vertical;
             _logBox.Dock = DockStyle.Fill;
+            _logBox.Visible = false;
             try { _logBox.Font = UiTheme.MonoFont(8.5F); }
             catch (Exception) { }
+
+            var logToggle = new Button();
+            logToggle.Text = "▸ " + L10n.T("ui.log.group");
+            logToggle.Dock = DockStyle.Top;
+            logToggle.Height = 32;
+            logToggle.TextAlign = ContentAlignment.MiddleLeft;
+            logToggle.Padding = new Padding(4, 0, 4, 0);
+            logToggle.Click += delegate (object s, EventArgs e)
+            {
+                bool show = !_logBox.Visible;
+                _logBox.Visible = show;
+                logPanel.Height = show ? 190 : 36;
+                logToggle.Text = (show ? "▾ " : "▸ ") + L10n.T("ui.log.group");
+            };
+
             logPanel.Controls.Add(_logBox);
-            split.Panel2.Controls.Add(logPanel);
+            logPanel.Controls.Add(logToggle);
+
+            var shell = new Panel();
+            shell.Dock = DockStyle.Fill;
+            shell.Controls.Add(body);
+            shell.Controls.Add(logPanel);
 
             _status = new StatusStrip();
             _statusLabel = new ToolStripStatusLabel(L10n.T("ui.status.ready"));
             var statusSpring = new ToolStripStatusLabel("");
             statusSpring.Spring = true;
             var versionLabel = new ToolStripStatusLabel(
-                AppInfo.Title + " v" + AppInfo.Version + " · " + L10n.LangDisplay(L10n.Current));
+                AppInfo.Title + " v" + AppInfo.Version + " " + AppInfo.Codename
+                + " · " + L10n.LangDisplay(L10n.Current));
             versionLabel.ForeColor = UiTheme.Muted;
             _status.Items.Add(_statusLabel);
             _status.Items.Add(statusSpring);
@@ -280,50 +310,170 @@ namespace HotkeyHound.Ui
 
             _toolbar = BuildToolbar();
 
-            // 停靠顺序按「后加入的先贴边」：工具栏在最上，提示条在其下，状态栏在底部，主区填充剩余。
-            Controls.Add(split);
+            // 停靠顺序按「后加入的先贴边」：页眉在最上，提示条在其下，状态栏在底部，主区填充剩余。
+            Controls.Add(shell);
             Controls.Add(_status);
             if (_banner != null) Controls.Add(_banner);
             Controls.Add(_toolbar);
 
             UiTheme.ApplyTree(this);
+            SelectPage(0);
         }
 
-        private ToolStrip BuildToolbar()
+        private void AddPage(Control content)
         {
-            var bar = new ToolStrip();
-            bar.GripStyle = ToolStripGripStyle.Hidden;
-            bar.Dock = DockStyle.Top;
-            bar.Padding = new Padding(8, 3, 8, 3);
-            bar.RenderMode = ToolStripRenderMode.Professional;
-            bar.ImageScalingSize = new Size(20, 20);
+            content.Dock = DockStyle.Fill;
+            _pages.Add(content);
+            _content.Controls.Add(content);
+            content.Visible = false;
+        }
 
-            // 页眉：图标 + 标题 + 版本靠左，帮助靠右。v1.3.1 只有一个孤零零的帮助按钮。
-            var titleItem = new ToolStripLabel(AppInfo.Title);
-            titleItem.Font = UiTheme.TitleFont(11F);
-            titleItem.ForeColor = UiTheme.Accent;
+        private Control BuildSidebar(string[] titles)
+        {
+            var sidebar = new Panel();
+            sidebar.Dock = DockStyle.Left;
+            // 英文导航词更长：196px 只够显示单词的第一个词（Key attribution → Key），
+            // 会让人误以为版本缺页。英文界面单独加宽，中文保持紧凑。
+            sidebar.Width = L10n.IsEnglish ? 238 : 196;
+            sidebar.Padding = new Padding(10, 12, 10, 12);
+            sidebar.Tag = "sidebar";
+            sidebar.BackColor = UiTheme.SurfaceAlt;
+
+            var nav = new TableLayoutPanel();
+            nav.Dock = DockStyle.Fill;
+            nav.ColumnCount = 1;
+            nav.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            nav.RowCount = titles.Length + 1;
+            for (int i = 0; i < titles.Length; i++)
+            {
+                nav.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                var button = BuildNavButton(titles[i], i);
+                _navButtons.Add(button);
+                nav.Controls.Add(button, 0, i);
+            }
+            // 末尾占满剩余高度：导航项永远从顶部开始排，不会被拉长平分。
+            nav.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            nav.Controls.Add(new Label(), 0, titles.Length);
+
+            sidebar.Controls.Add(nav);
+            return sidebar;
+        }
+
+        private Button BuildNavButton(string title, int index)
+        {
+            var button = new Button();
+            button.Text = title;
+            button.Dock = DockStyle.Fill;
+            button.Height = 46;
+            button.Margin = new Padding(0, 0, 0, 6);
+            button.Padding = new Padding(14, 0, 8, 0);
+            button.TextAlign = ContentAlignment.MiddleLeft;
+            UiTheme.MarkNavigation(button, false);
+            button.Click += delegate (object s, EventArgs e) { SelectPage(index); };
+            return button;
+        }
+
+        private void SelectPage(int index)
+        {
+            if (index < 0 || index >= _pages.Count) return;
+            for (int i = 0; i < _pages.Count; i++)
+            {
+                _pages[i].Visible = i == index;
+                if (i < _navButtons.Count) StyleNavButton(_navButtons[i], i == index);
+            }
+            try { _content.Controls.SetChildIndex(_pages[index], 0); }
+            catch (Exception) { }
+        }
+
+        private void StyleNavButton(Button button, bool selected)
+        {
+            if (button == null) return;
+            UiTheme.MarkNavigation(button, selected);
+            button.BackColor = selected ? UiTheme.Surface : Color.Transparent;
+            button.ForeColor = selected ? UiTheme.Accent : UiTheme.Text;
+            // ButtonBase 不允许把 BorderColor 设为 Transparent（会抛 NotSupportedException）；
+            // 未选中项靠 BorderSize=0 隐藏边框，颜色给一个合法值即可。
+            button.FlatAppearance.BorderColor = selected ? UiTheme.Accent : UiTheme.Border;
+            button.FlatAppearance.BorderSize = selected ? 1 : 0;
+            button.FlatAppearance.MouseOverBackColor = UiTheme.Surface;
+            button.FlatAppearance.MouseDownBackColor = UiTheme.Surface;
+        }
+
+        /// <summary>页眉：图标 + 产品名 + 一句话说明靠左，帮助靠右。</summary>
+        private Control BuildToolbar()
+        {
+            var header = new Panel();
+            header.Dock = DockStyle.Top;
+            // 高 DPI 下 9pt 中文字体实际行高接近 30px：页眉必须留足两行，
+            // 否则「全局快捷键冲突排查工具」的下缘会被下面的提示条盖住。
+            header.Height = 96;
+            header.Padding = new Padding(16, 8, 16, 8);
+            // Tag 让 ApplyTree 保留页眉的 Surface 底色，而不是把它刷成页面底色。
+            header.Tag = "header";
+            header.BackColor = UiTheme.Surface;
+
+            var icon = new PictureBox();
+            icon.Dock = DockStyle.Left;
+            icon.Width = 44;
+            icon.Margin = new Padding(0, 0, 12, 0);
+            icon.SizeMode = PictureBoxSizeMode.Zoom;
             try
             {
-                Icon icon = UiTheme.LoadAppIcon();
-                if (icon != null) titleItem.Image = icon.ToBitmap();
+                Icon appIcon = UiTheme.LoadAppIcon();
+                if (appIcon != null) icon.Image = appIcon.ToBitmap();
             }
             catch (Exception) { }
 
-            var versionItem = new ToolStripLabel("v" + AppInfo.Version);
-            versionItem.ForeColor = UiTheme.Muted;
+            // 标题和副标题各占一行：不再用绝对坐标，任何 DPI / 字体下都不会叠在一起。
+            var textPanel = new TableLayoutPanel();
+            textPanel.Dock = DockStyle.Fill;
+            textPanel.ColumnCount = 1;
+            textPanel.RowCount = 2;
+            textPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            textPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            textPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            textPanel.Margin = new Padding(0);
+            try { textPanel.BackColor = Color.Transparent; }
+            catch (Exception) { }
 
-            var helpButton = new ToolStripButton(L10n.T("ui.help.button"));
-            helpButton.DisplayStyle = ToolStripItemDisplayStyle.Text;
-            helpButton.ToolTipText = L10n.T("ui.help.button") + " (F1)";
-            // .NET Framework 的 ToolStripItem 没有 Spring（那是 ToolStripStatusLabel 独有的），
-            // 靠右对齐用 Alignment 实现。
-            helpButton.Alignment = ToolStripItemAlignment.Right;
+            var title = new Label();
+            title.Text = AppInfo.Title;
+            title.Font = UiTheme.TitleFont(11F);
+            title.ForeColor = UiTheme.Accent;
+            title.AutoSize = true;
+            title.Dock = DockStyle.Fill;
+            title.TextAlign = ContentAlignment.BottomLeft;
+            title.Margin = new Padding(0);
+
+            var subtitle = new Label();
+            subtitle.Text = AppInfo.Description;
+            subtitle.Font = UiTheme.BaseFont();
+            subtitle.ForeColor = UiTheme.Muted;
+            subtitle.AutoSize = true;
+            subtitle.Dock = DockStyle.Fill;
+            subtitle.TextAlign = ContentAlignment.TopLeft;
+            subtitle.Margin = new Padding(0);
+
+            textPanel.Controls.Add(title, 0, 0);
+            textPanel.Controls.Add(subtitle, 0, 1);
+
+            var helpButton = new Button();
+            helpButton.Text = L10n.T("ui.help.button");
+            helpButton.AutoSize = true;
+            helpButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            helpButton.MinimumSize = new Size(96, 34);
+            helpButton.Padding = new Padding(12, 0, 12, 0);
+            helpButton.Dock = DockStyle.Right;
+            helpButton.Margin = new Padding(0, 0, 0, 0);
             helpButton.Click += delegate (object s, EventArgs e) { OpenHelp(); };
+            // 页眉上的帮助按钮用主色（蓝底白字）：普通灰底按钮在浅色页眉里几乎看不见。
+            UiTheme.MarkPrimary(helpButton);
 
-            bar.Items.Add(titleItem);
-            bar.Items.Add(versionItem);
-            bar.Items.Add(helpButton);
-            return bar;
+            // 停靠顺序：先加 Fill 文本区，再加左右贴边的图标和帮助按钮。
+            header.Controls.Add(textPanel);
+            header.Controls.Add(icon);
+            header.Controls.Add(helpButton);
+            return header;
         }
 
         private Control BuildBanner()
@@ -346,6 +496,8 @@ namespace HotkeyHound.Ui
             banner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             banner.Padding = new Padding(10, 6, 10, 6);
             banner.Margin = new Padding(0);
+            // Tag 让 ApplyTree 保留提示条底色（它承载「非管理员/低完整性」的语义色）。
+            banner.Tag = "banner";
 
             var label = UiTheme.StackLabel(text ?? "", UiTheme.BannerText);
             label.TextAlign = ContentAlignment.MiddleLeft;
@@ -375,16 +527,9 @@ namespace HotkeyHound.Ui
             catch (Exception) { }
             try { if (_keyMonitorTab != null) _keyMonitorTab.StopMonitor(false); }
             catch (Exception) { }
+            try { if (_hookCheckTab != null) _hookCheckTab.StopCaptureIfActive(); }
+            catch (Exception) { }
             base.OnFormClosing(e);
-        }
-
-        private static TabPage MakePage(string title, Control content)
-        {
-            var page = new TabPage(title);
-            page.Padding = new Padding(8);
-            content.Dock = DockStyle.Fill;
-            page.Controls.Add(content);
-            return page;
         }
 
         private void OnLogLine(string line)

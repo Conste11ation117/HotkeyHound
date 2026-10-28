@@ -18,8 +18,7 @@ namespace HotkeyHound.Ui
     {
         private readonly MainForm _host;
         private readonly KeyMonitor _monitor;
-        private readonly Button _startButton;
-        private readonly Button _stopButton;
+        private readonly Button _toggleButton;
         private readonly Button _clearButton;
         private readonly Button _refreshButton;
         private readonly Label _status;
@@ -30,6 +29,9 @@ namespace HotkeyHound.Ui
         private Label _verdictNote;
         private Label _modStatus;
         private Label _modNote;
+        // 判定卡片：文字换行后行高不一定重算，改完文本要显式让这两层重新布局。
+        private Control _verdictCard;
+        private TableLayoutPanel _verdictStack;
         private readonly ListView _events;
         private ListView _remap;
         private ListBox _drivers;
@@ -51,9 +53,9 @@ namespace HotkeyHound.Ui
 
             var title = new Label();
             title.Text = L10n.T("ui.km.title");
-            title.Font = UiTheme.TitleFont(11F);
+            title.Font = UiTheme.TitleFont(14F);
             title.AutoSize = true;
-            title.Margin = new Padding(0, 2, 0, 2);
+            title.Margin = new Padding(0, 2, 0, 4);
 
             var hint = UiTheme.StackLabel(L10n.T("ui.km.hint"), UiTheme.Muted);
 
@@ -61,20 +63,14 @@ namespace HotkeyHound.Ui
 
             var buttonRow = UiTheme.NewFlowRow();
 
-            _startButton = new Button();
-            _startButton.Text = L10n.T("ui.km.start");
-            _startButton.Font = UiTheme.TitleFont(9.5F);
-            _startButton.Size = new Size(300, 36);
-            _startButton.Margin = new Padding(0, 2, 10, 2);
-            _startButton.Click += OnStartClick;
-            UiTheme.MarkPrimary(_startButton);
-
-            _stopButton = new Button();
-            _stopButton.Text = L10n.T("ui.km.stop");
-            _stopButton.Size = new Size(200, 36);
-            _stopButton.Margin = new Padding(0, 2, 10, 2);
-            _stopButton.Enabled = false;
-            _stopButton.Click += OnStopClick;
+            // 一个按钮切换开始/停止：两个按钮里总有一个是禁用状态，没有意义。
+            _toggleButton = new Button();
+            _toggleButton.Text = L10n.T("ui.km.start");
+            _toggleButton.Font = UiTheme.TitleFont(9.5F);
+            _toggleButton.Size = new Size(300, 36);
+            _toggleButton.Margin = new Padding(0, 2, 10, 2);
+            _toggleButton.Click += OnToggleClick;
+            UiTheme.MarkPrimary(_toggleButton);
 
             _clearButton = new Button();
             _clearButton.Text = L10n.T("ui.km.clear");
@@ -88,8 +84,7 @@ namespace HotkeyHound.Ui
             _refreshButton.Margin = new Padding(0, 2, 0, 2);
             _refreshButton.Click += delegate (object s, EventArgs e) { RefreshReadOnly(); };
 
-            buttonRow.Controls.Add(_startButton);
-            buttonRow.Controls.Add(_stopButton);
+            buttonRow.Controls.Add(_toggleButton);
             buttonRow.Controls.Add(_clearButton);
             buttonRow.Controls.Add(_refreshButton);
 
@@ -108,8 +103,8 @@ namespace HotkeyHound.Ui
             _events.Columns.Add(L10n.T("ui.km.col.time"), 108);
             _events.Columns.Add(L10n.T("ui.km.col.layer"), 110);
             _events.Columns.Add(L10n.T("ui.km.col.key"), 130);
-            _events.Columns.Add(L10n.T("ui.km.col.scancode"), 90);
-            _events.Columns.Add(L10n.T("ui.km.col.flags"), 160);
+            _events.Columns.Add(L10n.T("ui.km.col.scancode"), 110);
+            _events.Columns.Add(L10n.T("ui.km.col.flags"), 180);
             _events.Columns.Add(L10n.T("ui.km.col.desc"), 360);
             // 说明列吃满剩余宽度（2.0.0：修最大化时截断）。
             UiTheme.FillColumn(_events, 5, 220);
@@ -142,12 +137,13 @@ namespace HotkeyHound.Ui
             {
                 try
                 {
-                    int topHeight = top.Height;
-                    int avail = ClientSize.Height - topHeight;
-                    int h = avail - 130;
-                    if (h < 200) h = 200;
-                    if (h > 420) h = 420;
-                    if (avail - h < 90) h = Math.Max(120, avail - 90);
+                    int avail = ClientSize.Height - top.Height;
+                    // 详情区（判定卡片 + 修饰键）至少要放得下卡片内容；事件列表保留一半左右，
+                    // 窗口再矮也给它留 140px，谁都不至于只剩表头。
+                    int h = avail / 2;
+                    if (h < 300) h = 300;
+                    int maxH = Math.Max(150, avail - 140);
+                    if (h > maxH) h = maxH;
                     if (details.Height != h) details.Height = h;
                 }
                 catch (Exception) { }
@@ -186,6 +182,7 @@ namespace HotkeyHound.Ui
             card.AutoSize = true;
             card.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             card.Margin = new Padding(0, 0, 0, 4);
+            _verdictCard = card;
 
             var stack = new TableLayoutPanel();
             stack.Dock = DockStyle.Top;
@@ -197,6 +194,7 @@ namespace HotkeyHound.Ui
             stack.RowCount = 5;
             for (int i = 0; i < 5; i++) stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             stack.Padding = new Padding(UiTheme.SpaceS);
+            _verdictStack = stack;
 
             _verdictTitle = new Label();
             _verdictTitle.AutoSize = true;
@@ -221,7 +219,7 @@ namespace HotkeyHound.Ui
             modBox.Dock = DockStyle.Fill;
             modBox.Margin = new Padding(0);
             modBox.Text = L10n.T("ui.km.mod.title");
-            modBox.MinimumSize = new Size(0, 96);
+            modBox.MinimumSize = new Size(0, 70);
             modBox.Padding = new Padding(UiTheme.SpaceS);
 
             var modStack = new TableLayoutPanel();
@@ -242,6 +240,18 @@ namespace HotkeyHound.Ui
 
             layout.Controls.Add(card, 0, 0);
             layout.Controls.Add(modBox, 0, 1);
+            // AutoScroll 对 Dock=Top 的自动高度子面板不一定能自己算出范围；
+            // 显式同步最小滚动高度，窗口较矮时才会出现可用的纵向滚动条。
+            layout.SizeChanged += delegate (object s, EventArgs e)
+            {
+                try
+                {
+                    int wanted = layout.Height + 10;
+                    if (host.AutoScrollMinSize.Height != wanted)
+                        host.AutoScrollMinSize = new Size(0, wanted);
+                }
+                catch (Exception) { }
+            };
             host.Controls.Add(layout);
             return host;
         }
@@ -297,6 +307,20 @@ namespace HotkeyHound.Ui
             return split;
         }
 
+        /// <summary>
+        /// 判定文字换行后，AutoSize 行高不一定自己重算（文本是后设的）；显式让堆栈与卡片重新布局，
+        /// 否则第二行会被卡片下边缘切掉。
+        /// </summary>
+        private void RelayoutVerdict()
+        {
+            try
+            {
+                if (_verdictStack != null) { _verdictStack.PerformLayout(); _verdictStack.Invalidate(); }
+                if (_verdictCard != null) { _verdictCard.PerformLayout(); _verdictCard.Invalidate(); }
+            }
+            catch (Exception) { }
+        }
+
         private void ShowIdleVerdict()
         {
             _verdictTitle.Text = L10n.T("ui.km.verdict.idle");
@@ -306,15 +330,21 @@ namespace HotkeyHound.Ui
             _verdictEvidence.Text = "";
             _verdictNote.Text = L10n.T("ui.km.verdict.idleNote");
             _verdictNote.ForeColor = UiTheme.Muted;
+            RelayoutVerdict();
         }
 
         // ------------------------------------------------------------ 按钮
 
-        private void OnStartClick(object sender, EventArgs e)
+        private void OnToggleClick(object sender, EventArgs e)
         {
-            if (_busy || _monitor.IsRunning) return;
+            if (_busy) return;
+            if (_monitor.IsRunning)
+            {
+                StopMonitor(true);
+                return;
+            }
             _busy = true;
-            _startButton.Enabled = false;
+            _toggleButton.Enabled = false;
             _status.ForeColor = UiTheme.Warning;
             _status.Text = L10n.T("ui.km.starting");
 
@@ -353,8 +383,8 @@ namespace HotkeyHound.Ui
             _busy = false;
             if (!ok)
             {
-                _startButton.Enabled = true;
-                _stopButton.Enabled = false;
+                _toggleButton.Enabled = true;
+                _toggleButton.Text = L10n.T("ui.km.start");
                 _status.ForeColor = UiTheme.Error;
                 _status.Text = L10n.F("ui.km.startFailed", error ?? _monitor.LastError ?? L10n.T("common.unknown"));
                 MessageBox.Show(this,
@@ -365,18 +395,12 @@ namespace HotkeyHound.Ui
 
             // 窗口消息层必须在拥有窗口的 UI 线程上挂接。
             AttachWindowMessages();
-            _stopButton.Enabled = true;
+            _toggleButton.Text = L10n.T("ui.km.stop");
             _status.ForeColor = UiTheme.Success;
             _status.Text = L10n.F("ui.km.running",
                 _monitor.RawReady ? L10n.T("ui.km.yes") : L10n.T("ui.km.no"),
                 _monitor.HookReady ? L10n.T("ui.km.yes") : L10n.T("ui.km.no"));
             RefreshReadOnly();
-        }
-
-        private void OnStopClick(object sender, EventArgs e)
-        {
-            if (_busy) return;
-            StopMonitor(true);
         }
 
         /// <summary>供主窗口关闭时调用；同步停止，确保钩子一定被卸载。</summary>
@@ -388,8 +412,8 @@ namespace HotkeyHound.Ui
             if (updateUi && !IsDisposed)
             {
                 _busy = false;
-                _startButton.Enabled = true;
-                _stopButton.Enabled = false;
+                _toggleButton.Enabled = true;
+                _toggleButton.Text = L10n.T("ui.km.start");
                 _status.ForeColor = UiTheme.Muted;
                 _status.Text = L10n.T("ui.km.stopped");
             }
@@ -505,6 +529,7 @@ namespace HotkeyHound.Ui
                 _verdictNote.Text = L10n.F("ui.km.verdict.note", record.Note)
                     + (string.IsNullOrEmpty(record.Owner) ? "" : "\r\n" + L10n.F("ui.km.verdict.owner", record.Owner));
                 _verdictNote.ForeColor = UiTheme.Text;
+                RelayoutVerdict();
             }
             catch (Exception) { }
         }

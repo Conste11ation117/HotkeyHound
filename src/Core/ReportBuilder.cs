@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -168,7 +168,8 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
 
             foreach (TruthRow r in s.Truth.Rows)
             {
-                bool occ = r.Kind == TruthKind.MatchesDeclared || r.Kind == TruthKind.RegisteredButUnowned;
+                bool occ = r.Kind == TruthKind.MatchesDeclared || r.Kind == TruthKind.RegisteredButUnowned
+                    || r.Kind == TruthKind.SystemReserved;
                 sb.Append("<tr class=\"").Append(occ ? "occ" : "free").Append("\" data-state=\"")
                   .Append(occ ? "1" : "0").Append("\">");
                 sb.Append("<td class=\"k\">").Append(Html.Escape(r.Combo.Display())).Append("</td>");
@@ -202,7 +203,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
             TruthKind[] order = new TruthKind[]
             {
                 TruthKind.MatchesDeclared, TruthKind.DeclaredButNotRegistered,
-                TruthKind.RegisteredButUnowned, TruthKind.FreeAndUndeclared
+                TruthKind.RegisteredButUnowned, TruthKind.SystemReserved, TruthKind.FreeAndUndeclared
             };
 
             foreach (TruthKind kind in order)
@@ -253,6 +254,7 @@ footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #d8dbe2; }
                 case TruthKind.MatchesDeclared: return "matched";
                 case TruthKind.DeclaredButNotRegistered: return "declared-only";
                 case TruthKind.RegisteredButUnowned: return "unowned";
+                case TruthKind.SystemReserved: return "reserved";
                 default: return "free";
             }
         }

@@ -235,9 +235,10 @@ namespace HotkeyHound.Core
 
             Add(0x6A, "Num*");
             Add(0x6B, "Num+");
-            Add(0x6C, "Num-");
-            Add(0x6D, "Num.");
-            Add(0x6E, "Num/");
+            Add(0x6C, "NumSeparator");
+            Add(0x6D, "Num-");
+            Add(0x6E, "Num.");
+            Add(0x6F, "Num/");
 
             Add(0xBA, ";:");
             Add(0xBB, "=+");
@@ -278,11 +279,16 @@ namespace HotkeyHound.Core
             Alias("ArrowRight", 0x27);
             Alias("Back", 0x08);
             Alias("Space", 0x20);
+            Alias("Break", 0x13);
+            Alias("PrtScn", 0x2C);
+            Alias("PrintScrn", 0x2C);
+            Alias("Menu", 0x5D);
             Alias("Multiply", 0x6A);
             Alias("Add", 0x6B);
-            Alias("Subtract", 0x6C);
-            Alias("Decimal", 0x6D);
-            Alias("Divide", 0x6E);
+            Alias("Separator", 0x6C);
+            Alias("Subtract", 0x6D);
+            Alias("Decimal", 0x6E);
+            Alias("Divide", 0x6F);
         }
 
         private static void Add(uint vk, string name)

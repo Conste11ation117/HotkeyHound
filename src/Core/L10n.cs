@@ -430,6 +430,7 @@ namespace HotkeyHound.Core
             A("truth.kind.matched", "声明与实测一致", "Declared and measured match");
             A("truth.kind.declaredOnly", "有声明但未注册成功", "Declared but not registered");
             A("truth.kind.unowned", "已占用但无声明", "Occupied but undeclared");
+            A("truth.kind.reserved", "Windows 内置快捷键", "Windows built-in shortcut");
             A("truth.kind.free", "空闲且无声明", "Free and undeclared");
 
             A("truth.explain.matched",
@@ -447,6 +448,10 @@ namespace HotkeyHound.Core
               + "驱动工具），也可能是别的用户会话注册的。",
               "It is occupied in the system but no readable config file declares it. It may come from "
               + "software whose config is unreadable (IM, IME, driver tools), or from another user session.");
+            A("truth.explain.reserved",
+              "这是 Windows 内置键盘行为，不表示第三方软件发生了冲突。具体作用会随活动窗口和系统版本变化。",
+              "This is built-in Windows keyboard behavior, not a third-party software conflict. The exact action "
+              + "depends on the active window and Windows version.");
             A("truth.explain.free",
               "系统里既没注册、也没有任何软件声明。这些键位是自由的，可用来挑一个不冲突的热键。",
               "Neither registered in the system nor declared by any software. These keys are free and can "
@@ -469,6 +474,10 @@ namespace HotkeyHound.Core
               "没有找到任何可读配置的声明；可能是 IM/输入法等配置不可读的软件注册的。",
               "No declaration was found in any readable config; it may have been registered by software "
               + "whose config is unreadable (IM/IME).");
+            A("truth.note.reserved",
+              "Windows 内置行为；这不是未知软件占用，也不需要按第三方冲突处理。",
+              "Built-in Windows behavior; this is not an unknown software owner and does not need to be treated "
+              + "as a third-party conflict.");
             A("truth.note.unowned.errSuffix",
               "注册失败错误码 {0}（不是 1409，属于系统保留或特殊限制，不一定是软件占用）。",
               "RegisterHotKey failed with error {0} (not 1409; this is a system reservation or special "
@@ -493,12 +502,12 @@ namespace HotkeyHound.Core
             A("verdict.delivered", "正常送达", "Delivered normally");
             A("verdict.notGlobal", "不是全局热键", "Not a global hotkey");
             A("verdict.unknown", "等待结论", "Awaiting verdict");
-            A("verdict.inconclusive", "无法判定（条件不足）", "Inconclusive (prerequisite missing)");
+            A("verdict.inconclusive", "无法判定", "Inconclusive");
 
             A("verdictLogic.pending.evidence", "还在布防时间窗内", "Still inside the arming window");
             A("verdictLogic.pending.note",
-              "继续按几次这个组合键，等窗口结束出结论。",
-              "Press this combination a few more times and wait for the window to close for a verdict.");
+              "在时间窗内按这个组合键，等窗口结束出结论。",
+              "Press this combination inside the window and wait for the verdict.");
 
             A("verdictLogic.delivered.evidence",
               "本程序的 LL 钩子看到了这个按键，且引擎 B 收到了归属报告",
@@ -506,6 +515,12 @@ namespace HotkeyHound.Core
             A("verdictLogic.delivered.note",
               "按键正常送达，持有者明确。",
               "The key was delivered normally and its owner is clear.");
+
+            A("verdictLogic.noInput.evidence", "时间窗内未检测到该组合键。",
+              "The combination was not detected during the time window.");
+            A("verdictLogic.noInput.note",
+              "没有按键证据。请布防后按一次该组合键；未收到事件本身不能证明被钩子拦截。",
+              "No keypress was observed. Press the combination after arming; a lack of events alone does not prove interception.");
 
             A("verdictLogic.swallowedUpstream.evidence",
               "布防后的时间窗内，本程序的 WH_KEYBOARD_LL 钩子根本没看到这个组合键",
@@ -520,38 +535,34 @@ namespace HotkeyHound.Core
               "本程序的 LL 钩子看到了这个按键，但引擎 A 的占用表里没有它",
               "This program's LL hook saw the key, but engine A's occupancy table does not contain it");
             A("verdictLogic.notGlobal.note",
-              "这不是全局热键，只是当前窗口自己处理的按键（普通程序收不到，所以不会有归属报告）。",
-              "This is not a global hotkey; it is only handled by the current window (ordinary programs "
-              + "do not receive it, so there is no attribution report).");
+              "这不是全局热键，按键由当前窗口自己处理。",
+              "This is not a global hotkey; the key is handled by the current window.");
 
             A("verdictLogic.beforeHotkey.evidence",
               "本程序的 LL 钩子看到了这个按键，引擎 A 也把它记为已占用，但在阈值时间内没有收到归属报告",
               "This program's LL hook saw the key and engine A marked it occupied, but no attribution "
               + "report arrived within the threshold");
             A("verdictLogic.beforeHotkey.note",
-              "按键到达了系统，但持有者没收到命令——疑似被钩子截胡。"
-              + "可以按对照排除工作流逐个退出可疑软件再测一次。",
-              "The key reached the system but the owner did not get the command — a hook likely "
-              + "intercepted it. Use the comparison workflow to exit suspect software one at a time and re-test.");
+              "按键到达了系统，但持有者没收到命令。可用对照排除逐个退出可疑软件复测。",
+              "The key reached the system but the owner did not get the command. Use the comparison workflow to "
+              + "exit suspect software one at a time and re-test.");
 
             A("verdictLogic.inconclusiveNoScan.evidence",
               "本次结算时还没有可用的占用扫描结果（引擎 A 的占用表是空的）",
               "No occupancy scan result was available when this probe settled (engine A's table is empty)");
             A("verdictLogic.inconclusiveNoScan.note",
-              "缺少占用表就无法区分「不是全局热键」和「被钩子截胡」。请先到「扫描总览」页点「开始扫描」，再回来布防。",
-              "Without the occupancy table this tool cannot tell \"not a global hotkey\" from \"intercepted by a hook\". "
-              + "Run a scan on the Scan overview page first, then arm again.");
+              "缺少占用表，无法区分“不是全局热键”和“被截胡”。先扫描，再布防。",
+              "Without the occupancy table it cannot tell \"not a global hotkey\" from \"intercepted\". Scan first, "
+              + "then arm again.");
 
             A("verdictLogic.inconclusiveNoB.evidence",
               "本程序的 LL 钩子看到了这个按键，引擎 A 也把它记为已占用，但结算时引擎 B（按键归属）没有在监听",
               "This program's LL hook saw the key and engine A marked it occupied, but engine B (attribution) "
               + "was not listening when the probe settled");
             A("verdictLogic.inconclusiveNoB.note",
-              "没有归属报告可能只是因为引擎 B 没开，不能据此断定「被截胡」。请在布防时选择一并启动引擎 B，"
-              + "或先到「按键归属」页点「开始监听」，再回来布防一次。",
-              "A missing attribution report may simply mean engine B was off — that is not evidence of interception. "
-              + "Choose to start engine B together when arming, or click Start listening on the Attribution page first, "
-              + "then arm again.");
+              "没有归属报告可能只是引擎 B 没开，不能据此断定被截胡。布防时一并启动引擎 B，或先开始监听再布防。",
+              "A missing attribution report may simply mean engine B was off; that is not evidence of interception. "
+              + "Start engine B together when arming, or start listening first and then arm.");
 
             A("verdictLogic.late",
               "（注：{0} 的归属报告在按键之后超过 {1:0.0} 秒才到，判为截胡）",
@@ -899,8 +910,14 @@ namespace HotkeyHound.Core
             A("ui.tab.attribution", "按键归属", "Key attribution");
             A("ui.tab.hookcheck", "钩子检测", "Hook detection");
             A("ui.tab.truth", "配置真相表", "Config truth table");
+            A("ui.nav.truth", "配置真相表", "Truth table");
             A("ui.tab.report", "报告与关于", "Report & about");
             A("ui.help.button", "帮助", "Help");
+            A("ui.crash.body",
+              "程序遇到未处理的错误。\r\n\r\n{0}\r\n\r\n完整日志已写入：\r\n{1}\r\n\r\n"
+              + "你可以把该日志附在问题反馈里；程序会尽量保持运行，必要时请重新启动。",
+              "HotkeyHound hit an unexpected error.\r\n\r\n{0}\r\n\r\nFull details were written to:\r\n{1}\r\n\r\n"
+              + "You can attach that log to a bug report. The app will keep running when possible; restart it if needed.");
             A("ui.log.helpFailed", "打开帮助窗口失败：{0}", "Failed to open the help window: {0}");
             A("ui.banner.prefix", "⚠ ", "⚠ ");
             A("ui.banner.low",
@@ -910,17 +927,16 @@ namespace HotkeyHound.Core
               + "writes to %TEMP%/%LOCALAPPDATA% are denied. Copy the exe to an ordinary directory "
               + "(e.g. C:\\Tools\\) and run it from there.");
             A("ui.banner.notAdmin",
-              "非管理员：看不到以管理员身份运行的提权进程（例如 PowerToys）。可点右侧按钮提权重启。",
-              "Not an administrator: elevated processes (e.g. PowerToys) are invisible. Click the button on the "
-              + "right to relaunch elevated.");
+              "非管理员：看不到提权进程（例如 PowerToys）。",
+              "Not an administrator: elevated processes (e.g. PowerToys) are invisible.");
             A("ui.banner.elevate", "提权重启", "Relaunch elevated");
             A("ui.log.started", "HotkeyHound 已启动，版本 {0}", "HotkeyHound started, version {0}");
             A("ui.log.admin", "管理员权限：{0}", "Administrator: {0}");
             A("ui.log.adminYes", "有", "yes");
             A("ui.log.adminNo", "无（部分提权进程不可见）", "no (some elevated processes are invisible)");
             A("ui.log.howto",
-              "点「开始扫描」运行引擎 A（占用扫描）+ 引擎 D（配置聚合）并生成真相表。",
-              "Click Start scan to run engine A (occupancy scan) + engine D (config aggregation) and build the truth table.");
+              "点击“开始扫描”开始。",
+              "Click Start scan to begin.");
             A("ui.restart.title", "{0} —— 提权重启", "{0} — relaunch elevated");
             A("ui.restart.failed", "以管理员身份重启失败：{0}", "Relaunch as administrator failed: {0}");
             A("ui.restart.cancelled", "已取消提权（你在 UAC 提示里点了「否」）。",
@@ -937,13 +953,13 @@ namespace HotkeyHound.Core
             A("ui.ov.card.occupied", "占用组合", "Occupied");
             A("ui.ov.card.free", "空闲组合", "Free");
             A("ui.ov.card.declared", "配置声明数", "Declarations");
-            A("ui.ov.card.truth", "真相表行数", "Truth rows");
+            A("ui.ov.card.truth", "真相表", "Truth rows");
             A("ui.ov.hint",
-              "扫描会用 RegisterHotKey 逐个试探全部组合键，成功即立刻注销；不修改任何设置。"
-              + "「已占用但无声明」多半来自输入法、IM、驱动工具等配置不可读的程序。",
-              "The scan probes every combination with RegisterHotKey and unregisters on success; it modifies no "
-              + "settings. \"Occupied but undeclared\" mostly comes from software whose config is unreadable "
-              + "(IME, IM, driver tools).");
+              "逐个试探组合键，成功即注销，不修改任何设置。",
+              "Probes each combination and unregisters on success; nothing is modified.");
+            A("ui.ov.missHint",
+              "扫描扫不干净：只覆盖探测网格内的组合，没列出的组合不代表一定空闲。",
+              "The scan is not exhaustive: it only covers combinations in the probe grid, so unlisted ones are not guaranteed free.");
             A("ui.col.combo", "组合键", "Combination");
             A("ui.col.state", "状态", "State");
             A("ui.col.owner", "归属 / 声明来源", "Owner / declaration");
@@ -970,9 +986,8 @@ namespace HotkeyHound.Core
             A("ui.truth.filter.all", "全部（有声明或有占用）", "All (declared or occupied)");
             A("ui.truth.category", "类别：", "Category: ");
             A("ui.truth.explain",
-              "双击某一行可以打开它的来源配置文件。真相表底表是引擎 A 的全部组合。",
-              "Double-click a row to open its source config file. The truth table's base is every combination "
-              + "from engine A.");
+              "双击一行可打开它的来源配置文件。",
+              "Double-click a row to open its source config file.");
             A("ui.col.type", "类别", "Category");
             A("ui.col.declaredBy", "声明来源", "Declared by");
             A("ui.col.ownerHint", "已知归属提示", "Known owner hint");
@@ -984,17 +999,16 @@ namespace HotkeyHound.Core
             A("ui.truth.dlgTitle", "配置真相表", "Config truth table");
 
             // Attribution
-            A("ui.at.title", "按键归属（引擎 B）：按下热键后，报出是哪个进程持有它",
-              "Key attribution (engine B): press a hotkey to see which process holds it");
+            A("ui.at.title", "按键归属", "Key attribution");
             A("ui.at.hint",
-              "本页加载时不会安装任何钩子。只有在你点「开始监听」后，程序才会装一个全局消息钩子拦截 WM_HOTKEY 消息；"
-              + "点「停止监听」会立刻卸载它。原理：热键持有者收到消息时，注入的 hook DLL 把「持有者 PID + 组合键」报回来。",
-              "No hook is installed when this page loads. Only after you click Start listening does the program "
-              + "install a global message hook to intercept WM_HOTKEY; clicking Stop listening unloads it "
-              + "immediately. How it works: when the hotkey's owner receives the message, the injected hook DLL "
-              + "reports back \"owner PID + combination\".");
-            A("ui.at.start", "开始监听", "Start listening");
-            A("ui.at.stop", "停止监听", "Stop listening");
+              "点“开始监听”后安装全局消息钩子，点“停止监听”立即卸载。按热键后，注入的 DLL 回报“持有者 PID + 组合键”。",
+              "Start listening installs a global message hook; Stop listening unloads it. After a key press, "
+              + "the injected DLL reports \"owner PID + combination\".");
+            A("ui.at.missHint",
+              "监听不到时，可能是被低层钩子截走了；用“钩子检测”复测。",
+              "If nothing is reported, the key may be swallowed by a low-level hook; re-test it with Hook detection.");
+            A("ui.at.start", "开始监听（安装钩子）", "Start listening (installs hook)");
+            A("ui.at.stop", "停止监听（卸载钩子）", "Stop listening (unload hook)");
             A("ui.at.clear", "清空", "Clear");
             A("ui.at.copy", "复制到剪贴板", "Copy to clipboard");
             A("ui.at.notStarted", "未开始监听。", "Not listening.");
@@ -1016,8 +1030,7 @@ namespace HotkeyHound.Core
             A("ui.at.unknownPath", "(拿不到路径)", "(no path)");
             A("ui.at.captured", "已捕获 {0} 条归属记录。", "Captured {0} attribution record(s).");
             A("ui.at.installing", "正在安装钩子…", "Installing hook…");
-            A("ui.at.stopped", "已停止监听，钩子已卸载（UnhookWindowsHookEx）。",
-              "Stopped listening; hook unloaded (UnhookWindowsHookEx).");
+            A("ui.at.stopped", "已停止监听，钩子已卸载。", "Stopped listening; hook unloaded.");
             A("ui.at.listening", "正在监听…请按下要排查的全局热键。",
               "Listening… press the global hotkey you want to investigate.");
             A("ui.at.startFailed", "启动失败：{0}", "Start failed: {0}");
@@ -1036,38 +1049,36 @@ namespace HotkeyHound.Core
             A("ui.at.copyFailed", "复制失败：{0}", "Copy failed: {0}");
 
             // Hook check
-            A("ui.hk.title", "钩子检测（引擎 C）：判断按键是否被更上层的钩子吞掉",
-              "Hook detection (engine C): judge whether a key is swallowed by an upstream hook");
+            A("ui.hk.title", "钩子检测", "Hook detection");
             A("ui.hk.guide",
-              "三步：① 填好组合键后点「布防」（此刻才安装低层键盘钩子；若引擎 B 未在监听，会先征求你的同意一并启动）"
-              + "　② 立即按下有问题的快捷键　③ 看下方结论。",
-              "Three steps: (1) enter a combination and click Arm (only then is the low-level keyboard hook "
-              + "installed; if engine B is not listening, you will be asked for consent to start it too)  "
-              + "(2) immediately press the problematic hotkey  (3) read the verdict below.");
+              "填好组合键，点“布防”，然后在时间窗内按一次该键。时间窗内没按键，结论是“无法判定”，不会判成被吞。",
+              "Enter a combination, click Arm, then press it once inside the time window. If nothing is pressed, "
+              + "the verdict is Inconclusive — not \"swallowed\".");
+            A("ui.hk.capture", "捕获组合键", "Capture combination");
+            A("ui.hk.capturing", "等待按键：按一次要检测的组合键。", "Waiting for a key: press the combination to test.");
+            A("ui.hk.captured", "已捕获：{0}", "Captured: {0}");
+            A("ui.hk.captureFailed", "无法开始组合键捕获：{0}", "Cannot start combination capture: {0}");
             A("ui.hk.arm", "布防（安装钩子）", "Arm (install hook)");
             A("ui.hk.stop", "停止（卸载钩子）", "Stop (unload hook)");
             A("ui.hk.notArmed", "低层键盘钩子未安装。", "Low-level keyboard hook not installed.");
             A("ui.hk.warn",
-              "提示：本页只观察按键、不吞键、不改键，也绝不结束或暂停任何进程。"
-              + "钩子判定为「被吞掉」时，请用下方「对照排除」逐条记录再人工退出可疑软件对比。",
-              "Note: this page only observes keys — it never swallows or alters them, and never ends or pauses "
-              + "any process. When a verdict is \"swallowed\", use the comparison workflow below to record, then "
-              + "manually exit suspect software and compare.");
+              "只观察按键，不拦截按键，也不结束或暂停任何进程。",
+              "It only observes keys; it never intercepts them and never ends or pauses any process.");
             A("ui.hk.col.verdict", "判定", "Verdict");
             A("ui.hk.col.note", "说明", "Explanation");
-            A("ui.hk.candTitle", "候选进程（当前正在运行）", "Candidate processes (currently running)");
+            A("ui.hk.candTitle", "候选进程（运行中）", "Candidate processes");
             A("ui.hk.refresh", "刷新候选进程", "Refresh candidates");
             A("ui.hk.steps",
-              "对照排除步骤：\r\n"
-              + "1. 点「记录本次对照」保存当前结论；\r\n"
-              + "2. 手动退出一个上面列出的可疑软件；\r\n"
-              + "3. 回到本页再测一次同一组合键；\r\n"
-              + "4. 再点「记录本次对照」，对比两次结论。",
+              "对照排除：\r\n"
+              + "1. 记录当前结论；\r\n"
+              + "2. 手动退出一个可疑软件；\r\n"
+              + "3. 用同一组合键重测并记录；\r\n"
+              + "4. 对比两次结论。",
               "Comparison workflow:\r\n"
-              + "1. Click Record comparison to save the current verdict;\r\n"
-              + "2. Manually exit one suspect process listed above;\r\n"
-              + "3. Come back and re-test the same combination;\r\n"
-              + "4. Click Record comparison again and compare the two verdicts.");
+              + "1. Record the current verdict;\r\n"
+              + "2. Manually exit one suspect process;\r\n"
+              + "3. Re-test the same combination and record again;\r\n"
+              + "4. Compare the two verdicts.");
             A("ui.hk.record", "记录本次对照", "Record comparison");
             A("ui.hk.parseFail", "无法解析这个组合键。示例：Ctrl+Alt+M、Win+Shift+F23。",
               "Cannot parse this combination. Examples: Ctrl+Alt+M, Win+Shift+F23.");
@@ -1095,10 +1106,10 @@ namespace HotkeyHound.Core
             A("ui.hk.installFailDlg", "无法安装 WH_KEYBOARD_LL 钩子：\r\n{0}",
               "Cannot install the WH_KEYBOARD_LL hook:\r\n{0}");
             A("ui.hk.armFail", "布防失败：{0}", "Arming failed: {0}");
-            A("ui.hk.armed", "已布防 {0}，窗口 {1:0.0} 秒，请现在按下它。",
-              "Armed {0}, window {1:0.0} s; press it now.");
-            A("ui.hk.armedTick", "布防中：{0}，窗口剩余 {1:0.0} 秒，请现在按下它。",
-              "Armed: {0}, {1:0.0} s left in the window; press it now.");
+            A("ui.hk.armed", "已布防 {0}，请在 {1:0.0} 秒内按一次。",
+              "Armed {0}; press it once within {1:0.0} s.");
+            A("ui.hk.armedTick", "等待按键：{0}，剩余 {1:0.0} 秒。",
+              "Waiting for a keypress: {0}, {1:0.0} s left.");
             A("ui.hk.stopped", "已停止并卸载低层键盘钩子（UnhookWindowsHookEx）。若引擎 B 是被本页联动启动的，它仍在监听。",
               "Stopped and unloaded the low-level keyboard hook (UnhookWindowsHookEx). If engine B was co-started "
               + "from this page, it is still listening.");
@@ -1119,10 +1130,10 @@ namespace HotkeyHound.Core
             A("ui.rt.pathLabel", "报告路径：", "Report path: ");
             A("ui.rt.open", "打开报告", "Open report");
             A("ui.rt.generate", "生成报告", "Generate report");
-            A("ui.rt.noReport", "报告文件还不存在，请先点「生成报告」。",
-              "The report file does not exist yet; click Generate report first.");
-            A("ui.rt.notGenerated", "尚未生成报告。可先在「扫描总览」里跑一次扫描。",
-              "No report generated yet. Run a scan on the Scan overview page first.");
+            A("ui.rt.noReport", "报告文件还不存在，请先生成报告。",
+              "The report file does not exist yet; generate it first.");
+            A("ui.rt.notGenerated", "尚未生成报告。先扫描一次。",
+              "No report generated yet. Run a scan first.");
             A("ui.rt.release",
               "{0} {1} —— {2}\r\n运行框架：.NET Framework {3}（Windows 自带，无需安装）\r\n"
               + "机器：{4}　用户：{5}　管理员：{6}",
@@ -1130,37 +1141,27 @@ namespace HotkeyHound.Core
               + "Machine: {4}  User: {5}  Admin: {6}");
             A("ui.rt.limits",
               "已知限制：\r\n"
-              + "· 引擎 B（按键归属）、引擎 C（钩子检测）与按键监视按设计只在用户显式点「开始监听」「布防」"
-              + "或「开始监视」时才安装钩子；程序加载页面不会安装任何钩子。「钩子检测」页布防时若引擎 B 未在监听，会在征得你同意后一并启动它。\r\n"
-              + "· 用键盘钩子实现的热键（PowerToys 键盘管理器、AutoHotkey、输入法）不会占 RegisterHotKey，"
-              + "因此引擎 A 会把它们报成「空闲」——报告里靠引擎 D 的配置声明补上。\r\n"
-              + "· 非管理员运行时看不到提权进程的热键归属；32 位进程由单独的 32 位宿主覆盖，"
-              + "宿主启动失败时这部分会缺失（日志里有原因）。\r\n"
-              + "· 按键监视只列出键盘类过滤驱动供参考，不判定、不停止、不卸载任何驱动。\r\n"
-              + "· 本工具全程只读：不写配置、不改注册表、注册的热键立刻注销。",
+              + "· 只有点“开始监听”“布防”“开始监视”时才安装钩子；打开页面不安装钩子。\r\n"
+              + "· 用键盘钩子实现的热键不占 RegisterHotKey，引擎 A 会报成空闲，由引擎 D 的配置声明补充。\r\n"
+              + "· 非管理员看不到提权进程归属；32 位进程由单独的 32 位宿主覆盖。\r\n"
+              + "· 全程只读：不写配置、不改注册表，探测用的注册立刻注销。",
               "Known limitations:\r\n"
-              + "· Engines B (attribution), C (hook detection) and the key monitor install hooks only when "
-              + "the user explicitly clicks Start listening, Arm, or Start monitoring; loading a page installs "
-              + "no hook. When arming on the Hook detection page while engine B is off, engine B is started "
-               + "too — only after you consent.\r\n"
-              + "· Hotkeys implemented with keyboard hooks (PowerToys Keyboard Manager, AutoHotkey, IMEs) do "
-              + "not use RegisterHotKey, so engine A reports them as \"free\" — the report fills the gap with "
-              + "engine D's config declarations.\r\n"
-              + "· When not run as administrator, attribution for elevated processes is invisible; 32-bit "
-              + "processes are covered by a separate 32-bit companion host, and that coverage is missing if "
-              + "the host fails to start (the log says why).\r\n"
-              + "· The key monitor lists keyboard-class filter drivers for reference only; it never judges, "
-              + "stops or unloads a driver.\r\n"
-              + "· The tool is read-only throughout: it writes no config, does not touch the registry, and "
-              + "unregisters hotkeys immediately.");
+              + "· Hooks are installed only when you click Start listening, Arm, or Start monitoring; opening a "
+              + "page installs nothing.\r\n"
+              + "· Hotkeys implemented with keyboard hooks do not occupy RegisterHotKey, so engine A reports them "
+              + "as free; engine D's declarations fill the gap.\r\n"
+              + "· Without administrator rights, attribution for elevated processes is invisible; 32-bit processes "
+              + "are covered by a separate 32-bit host.\r\n"
+              + "· Read-only throughout: no config is written, no registry change, and probe registrations are "
+              + "released immediately.");
             A("ui.rt.needScan", "还没有扫描结果，请先到「扫描总览」点「开始扫描」。",
               "No scan result yet; go to Scan overview and click Start scan first.");
             A("ui.rt.generated", "已生成：{0}（{1:N0} 字节）", "Generated: {0} ({1:N0} bytes)");
             A("ui.rt.writeFailed", "报告写入失败：{0}", "Failed to write report: {0}");
-            A("ui.rt.langLabel", "语言 / Language：", "Language: ");
-            A("ui.rt.langRestart", "语言已切换为 {0}，请重启程序后生效。",
-              "Language switched to {0}; restart the program for it to take effect.");
-            A("ui.rt.themeLabel", "主题 / Theme：", "Theme: ");
+            A("ui.rt.langLabel", "语言：", "Language: ");
+            A("ui.rt.langRestart", "语言已切换为 {0}，重启后生效。",
+              "Language switched to {0}; restart to apply.");
+            A("ui.rt.themeLabel", "主题：", "Theme: ");
             A("ui.rt.themeSystem", "跟随系统", "Follow system");
             A("ui.rt.themeLight", "浅色", "Light");
             A("ui.rt.themeDark", "深色", "Dark");
@@ -1202,53 +1203,41 @@ namespace HotkeyHound.Core
             A("km.decide.never.evidence", "Raw Input 没有看到这个键。",
               "Raw input never saw this key.");
             A("km.decide.never.note",
-              "按键没有从设备层到达系统。常见原因：键盘硬件/固件问题、键盘过滤驱动在设备层拦截、"
-              + "或这个键本身坏了。可以先换一个键盘/接口复测，再检查下方列出的键盘类驱动。",
-              "The key never reached the system from the device layer. Common causes: keyboard hardware or "
-              + "firmware problems, a keyboard filter driver intercepting at the device layer, or a broken key. "
-              + "Try another keyboard/port, then review the keyboard-class drivers listed below.");
+              "设备层没收到按键。检查键盘、接口，再看下方列出的键盘类驱动。",
+              "The device layer did not receive the key. Check the keyboard and port, then review the "
+              + "keyboard-class drivers below.");
             A("km.decide.before.evidence", "Raw Input 看到了，低层键盘钩子没看到。",
               "Raw input saw it; the low-level keyboard hook did not.");
             A("km.decide.before.note",
-              "按键离开了设备，但在到达本程序的低层钩子之前就被吞了——机器上有更上游的键盘钩子"
-              + "（输入法、厂商驱动、宏工具、远控软件等）。工具只记录，不结束任何进程。",
-              "The key left the device but was swallowed before reaching this program's low-level hook — "
-              + "something upstream (IME, vendor driver, macro tool, remote-control software) is eating it. "
-              + "This tool only records; it never ends any process.");
+              "设备层收到了按键，低层钩子没收到：更上游的东西吞掉了它。",
+              "The device layer received the key, but the low-level hook did not: something upstream swallowed it.");
             A("km.decide.delivered.evidence", "三层都看到了这个按键。",
               "All three layers saw this key.");
             A("km.decide.delivered.note",
-              "按键从设备层一路到达本程序窗口。如果功能仍然不对，问题在接收按键的软件本身，而不是输入链路。",
-              "The key travelled from the device layer all the way to this program's window. If the function "
-              + "still misbehaves, the problem is in the receiving software, not in the input path.");
+              "三层都收到按键。功能仍然不对时，问题在接收按键的软件本身。",
+              "All three layers received the key. If it still misbehaves, the problem is in the receiving software.");
             A("km.decide.foreground.evidence", "Raw Input 与低层钩子看到了，本程序窗口没有收到。",
               "Raw input and the low-level hook saw it; this program's window did not.");
             A("km.decide.foreground.note",
-              "这不是全局热键，按键被送到了当时的前台窗口（本程序没有聚焦）。要判断窗口层，请让本程序保持聚焦再按一次。",
-              "This is not a global hotkey; the key went to the foreground window (this program was not focused). "
-              + "Keep this program focused and press again to observe the window-message layer.");
+              "按键被送到当前前台窗口，本程序没有聚焦。保持本程序聚焦再按一次。",
+              "The key went to the foreground window because this program was not focused. Keep this program "
+              + "focused and press again.");
             A("km.decide.attributed.evidence", "按键到达钩子链，引擎 B 报出了持有者。",
               "The key reached the hook chain and engine B reported its owner.");
             A("km.decide.attributed.note",
-              "全局热键已被持有者接收。若功能没有触发，请检查该软件自身的设置。",
-              "The global hotkey was received by its owner. If the function did not fire, check that software's "
-              + "own settings.");
+              "持有者已收到这个全局热键。功能没触发时，检查该软件自身的设置。",
+              "The owner received this global hotkey. If it did not fire, check that software's own settings.");
             A("km.decide.after.evidence", "按键到达钩子链，但全局热键的持有者没有收到归属报告。",
               "The key reached the hook chain, but the global hotkey's owner did not report receiving it.");
             A("km.decide.after.note",
-              "按键在低层钩子之后、热键分发之前被截胡（或持有者没有处理 WM_HOTKEY）。"
-              + "可同时开启「按键归属」监听复测；仍无归属时，用「钩子检测」页的对照排除流程逐个退出可疑软件。",
-              "The key was intercepted after the low-level hook but before hotkey dispatch (or the owner ignored "
-              + "WM_HOTKEY). Re-test with Key attribution listening as well; if there is still no owner, use the "
-              + "comparison workflow on the Hook detection page and exit suspect software one by one.");
+              "钩子链收到按键，但持有者没有收到归属报告。可同时开启按键归属监听复测。",
+              "The hook chain received the key, but the owner sent no attribution report. Re-test with key "
+              + "attribution listening as well.");
             A("km.decide.inconclusive.evidence", "按键到达钩子链，但当前没有运行归属引擎。",
               "The key reached the hook chain, but the attribution engine is not running.");
             A("km.decide.inconclusive.note",
-              "这是一个全局热键，但「按键归属」没有在监听，无法判断持有者是否收到。"
-              + "请到「按键归属」页点「开始监听」后重测，才能把「送达」和「被截胡」分开。",
-              "This is a global hotkey, but Key attribution is not listening, so we cannot tell whether the owner "
-              + "received it. Start listening on the Key attribution page and re-test to distinguish "
-              + "\"delivered\" from \"intercepted\".");
+              "按键归属没有在监听，无法判断是否送达。开启监听后重测。",
+              "Key attribution is not listening, so delivery cannot be judged. Start listening and re-test.");
             A("km.decide.owner", "持有者：{0}（PID {1}）。", "Owner: {0} (PID {1}).");
 
             A("km.mod.ok", "正常", "OK");
@@ -1279,22 +1268,19 @@ namespace HotkeyHound.Core
               "Called UnhookWindowsHookEx (WH_KEYBOARD_LL, handle 0x{0})");
             A("km.log.verdict", "{0} → {1}", "{0} -> {1}");
 
-            A("ui.km.title", "按键监视：这个键是键盘坏了、驱动拦了、还是被某个软件吃了？",
-              "Key monitor: is the key broken, blocked by a driver, or eaten by software?");
+            A("ui.km.title", "按键监视", "Key monitor");
             A("ui.km.hint",
-              "三层观察：① Raw Input（设备层）　② WH_KEYBOARD_LL（钩子链）\r\n③ 本程序窗口消息（仅聚焦时）。",
-              "Three layers: raw input, WH_KEYBOARD_LL,\r\nand this window's messages (only while focused).");
+              "同时观察三层：Raw Input、低层钩子、窗口消息（仅本程序聚焦时）。",
+              "Observes three layers: raw input, low-level hook, and window messages (only while this window is focused).");
             A("ui.km.start", "开始监视（安装键盘钩子）", "Start monitoring (installs keyboard hook)");
             A("ui.km.stop", "停止监视（卸载钩子）", "Stop monitoring (unload hook)");
             A("ui.km.clear", "清空", "Clear");
             A("ui.km.refresh", "刷新只读信息", "Refresh read-only info");
-            A("ui.km.notStarted", "未开始监视。本页加载时没有安装任何钩子。",
-              "Not monitoring. No hook was installed when this page loaded.");
-            A("ui.km.starting", "正在安装 Raw Input 与低层键盘钩子…", "Installing raw input and the low-level keyboard hook…");
-            A("ui.km.running", "正在监视：Raw Input {0}，低层钩子 {1}。请按键。",
+            A("ui.km.notStarted", "未开始监视。", "Not monitoring.");
+            A("ui.km.starting", "正在安装键盘钩子…", "Installing keyboard hook…");
+            A("ui.km.running", "监视中：Raw Input {0}，低层钩子 {1}。请按键。",
               "Monitoring: raw input {0}, low-level hook {1}. Press a key.");
-            A("ui.km.stopped", "已停止监视：低层钩子已卸载，Raw Input 已注销。",
-              "Stopped monitoring: the low-level hook was unloaded and raw input was unregistered.");
+            A("ui.km.stopped", "已停止监视，钩子已卸载。", "Stopped monitoring; hook unloaded.");
             A("ui.km.startFailed", "启动失败：{0}", "Start failed: {0}");
             A("ui.km.startFailedDetail",
               "无法启动按键监视：\r\n{0}\r\n\r\nRaw Input 与 WH_KEYBOARD_LL 至少需要一个可用。详见底部日志。",
@@ -1313,22 +1299,19 @@ namespace HotkeyHound.Core
             A("ui.km.verdict.note", "说明：{0}", "Explanation: {0}");
             A("ui.km.verdict.owner", "持有者：{0}", "Owner: {0}");
 
-            A("ui.km.mod.title", "卡住的修饰键（GetAsyncKeyState）", "Stuck modifiers (GetAsyncKeyState)");
-            A("ui.km.mod.none", "无：左右 Ctrl/Alt/Shift/Win 的系统状态与钩子观测一致。",
-              "None: the OS state and hook observation agree for left/right Ctrl/Alt/Shift/Win.");
+            A("ui.km.mod.title", "修饰键状态", "Modifier state");
+            A("ui.km.mod.none", "未发现异常。", "No anomalies.");
             A("ui.km.mod.some", "发现 {0} 个异常：{1}", "{0} anomaly(ies): {1}");
             A("ui.km.mod.note",
-              "「系统说按着、钩子没看到」也可能只是监视开始前就按住了这个键；松开再按一次即可确认。",
-              "\"OS says down, hook saw no press\" may simply mean the key was already held when monitoring "
-              + "started; release and press it again to confirm.");
+              "监视开始前已按住的键可能显示为异常；松开再按一次可确认。",
+              "A key already held before monitoring started may look like an anomaly; release and press it again.");
 
-            A("ui.km.remap.title", "Scancode Map 重映射（只读）", "Scancode Map remaps (read-only)");
+            A("ui.km.remap.title", "Scancode Map 重映射", "Scancode Map remaps");
             A("ui.km.remap.input", "按下（输入扫描码）", "Press (input scan code)");
             A("ui.km.remap.output", "系统产生（输出扫描码）", "System produces (output scan code)");
             A("ui.km.remap.empty", "注册表里没有 Scancode Map，或没有有效映射。",
               "No Scancode Map in the registry, or no valid mapping.");
-            A("ui.km.drivers.title", "键盘类过滤驱动（只列出，不判定、不卸载）",
-              "Keyboard-class filter drivers (listed only; never judged or unloaded)");
+            A("ui.km.drivers.title", "键盘类过滤驱动", "Keyboard-class filter drivers");
             A("ui.km.drivers.name", "驱动 / 服务名", "Driver / service");
             A("ui.km.drivers.group", "组", "Group");
             A("ui.km.drivers.start", "启动类型", "Start");
@@ -1501,14 +1484,10 @@ namespace HotkeyHound.Core
               "The hook catalog failed to load (ignored; the scan result is unaffected): {0}");
 
             A("ui.tab.hooksuspects", "钩子嫌疑", "Hook suspects");
-            A("ui.hs.title", "钩子嫌疑：谁在用键盘钩子抢键（知识库 × 实测占用）",
-              "Hook suspects: who grabs keys with keyboard hooks (catalog x measured occupancy)");
+            A("ui.hs.title", "钩子嫌疑", "Hook suspects");
             A("ui.hs.hint",
-              "本页加载时不安装任何钩子。结论来自三件事：读它的配置、看它是否在跑、对照引擎 A 的实测占用。"
-              + "证据等级为「已确认/高度怀疑/已知默认/仅供参考」，绝不会把猜测写成事实。",
-              "No hook is installed when this page loads. The conclusion comes from three things: reading its config, "
-              + "checking whether it runs, and comparing against engine A's measurement. Evidence levels are "
-              + "Confirmed / Highly suspected / Known default / Reference only — guesses are never presented as facts.");
+              "本页不安装钩子。结论来自配置、进程状态和占用扫描的对照。",
+              "This page installs no hook. The conclusion comes from config, process state, and the occupancy scan.");
             A("ui.hs.levels",
               "已确认=配置写了且进程在跑；高度怀疑=只有一侧证据；已知默认=官方默认、本机没读到；仅供参考=确定用钩子但键位未知。",
               "Confirmed = config declares it and the process runs; Highly suspected = only one side of the evidence; "
@@ -1521,10 +1500,9 @@ namespace HotkeyHound.Core
             A("ui.hs.col.source", "来源路径", "Source path");
             A("ui.hs.openConfig", "打开配置所在目录", "Open config folder");
             A("ui.hs.openFailed", "无法打开：{0}\r\n{1}", "Cannot open: {0}\r\n{1}");
-            A("ui.hs.noScan", "尚未扫描。先到「扫描总览」点「开始扫描」，钩子嫌疑需要与实测占用对照。",
-              "Not scanned yet. Run Start scan on the overview page first; hook suspects are correlated with measured occupancy.");
-            A("ui.hs.empty", "本次没有钩子嫌疑记录（知识库里没有 hook/mixed 条目，或键位都不在探测网格内）。",
-              "No hook-suspect records this run (the catalog has no hook/mixed entries, or none of their keys are inside the probe grid).");
+            A("ui.hs.noScan", "尚未扫描。先扫描才能对照占用。",
+              "Not scanned yet. Run a scan first to compare against occupancy.");
+            A("ui.hs.empty", "本次没有钩子嫌疑记录。", "No hook-suspect records this run.");
             A("ui.hs.count", "显示 {0} 条", "Showing {0}");
             A("ui.hs.pickRow", "请先选中一行。", "Select a row first.");
             A("ui.hs.noSource", "这一条没有可打开的配置路径。\r\n\r\n{0}", "This row has no config path to open.\r\n\r\n{0}");
@@ -1532,27 +1510,25 @@ namespace HotkeyHound.Core
             A("ui.hs.processYes", "是", "Yes");
             A("ui.hs.processNo", "否", "No");
 
-            A("ui.at.autoButton", "自动归属已占用组合（会触发这些热键的功能）",
-              "Auto-attribute occupied combinations (this triggers these hotkeys)");
+            A("ui.at.autoButton", "自动归属已占用组合（会真的按下这些热键）",
+              "Auto-attribute occupied combinations (these hotkeys are really pressed)");
             A("ui.at.autoButtonStop", "中止自动归属（Esc）", "Abort auto-attribution (Esc)");
             A("ui.at.autoConfirmTitle", "自动归属 —— 会真的按下热键",
               "Auto-attribution — hotkeys will really be pressed");
             A("ui.at.autoConfirmBody",
-              "接下来程序会对「已占用但不知道主人」的组合逐个模拟按下。这会真的触发这些热键的功能：\r\n\r\n"
-              + "· 可能开始录屏/录音、打开或关闭面板、切换输入法；\r\n"
-              + "· 可能弹出窗口、改变系统状态，甚至启动程序；\r\n"
-              + "· 含 Win 的组合、Alt+F4、Alt+Tab 等危险键已被硬编码排除，不会按；\r\n"
-              + "· 每次按键间隔至少 400 毫秒，归属等待 1.2 秒，最多 30 个；\r\n"
-              + "· 随时按 Esc 立即中止。\r\n\r\n"
-              + "确定要继续吗？",
-              "The program will simulate pressing each \"occupied but unknown owner\" combination. This really triggers "
-              + "those hotkeys: it may start recording, open or close panels, switch the input method, pop up windows, "
-              + "change system state, or even launch programs. The dangerous combinations (anything with Win, Alt+F4, "
-              + "Alt+Tab, and similar) are hard-coded exclusions and will never be pressed. There is at least 400 ms "
-              + "between key presses, 1.2 s of attribution wait, at most 30 combinations, and Esc aborts immediately.\r\n\r\n"
+              "接下来会逐个按下“已占用但不知道主人”的组合，会真的触发这些热键。\r\n\r\n"
+              + "可能开始录屏/录音、打开或关闭面板、切换输入法、启动程序。\r\n"
+              + "含 Win、Alt+F4、Alt+Tab 等危险键不会按。\r\n"
+              + "电脑上应用较多时，可能长时间无法正常操作，Esc 也不一定能用。\r\n\r\n"
+              + "继续？",
+              "The program will press each \"occupied but unknown owner\" combination, which really triggers those "
+              + "hotkeys.\r\n\r\n"
+              + "It may start recording, open or close panels, switch input methods, or launch programs.\r\n"
+              + "Dangerous combinations (anything with Win, Alt+F4, Alt+Tab, and similar) are never pressed.\r\n"
+              + "On a machine with many apps, it may block normal use for a while, and Esc may not respond.\r\n\r\n"
               + "Continue?");
-            A("ui.at.autoNeedScan", "还没有扫描结果。先在「扫描总览」点「开始扫描」，才知道哪些组合已占用。",
-              "No scan result yet. Run Start scan on the overview page so the tool knows which combinations are occupied.");
+            A("ui.at.autoNeedScan", "还没有扫描结果。先扫描，才知道哪些组合已占用。",
+              "No scan result yet. Scan first to know which combinations are occupied.");
             A("ui.at.autoStarting", "正在安装归属钩子（只在本次自动归属期间）…",
               "Installing the attribution hook (for this auto-attribution run only)…");
             A("ui.at.autoAborting", "正在中止…", "Aborting…");
@@ -1563,8 +1539,8 @@ namespace HotkeyHound.Core
             A("ui.at.autoAborted", "已中止自动归属（Esc 或按钮）。已完成的结果已记录。",
               "Auto-attribution aborted (Esc or the button). Completed results were recorded.");
             A("ui.at.autoFailed", "自动归属失败：{0}", "Auto-attribution failed: {0}");
-            A("ui.at.autoListTitle", "自动归属结果（无响应 = 高度怀疑被钩子吞掉）",
-              "Auto-attribution results (no response = very likely swallowed by a hook)");
+            A("ui.at.autoListTitle", "自动归属结果（无响应 = 持有者没收到）",
+              "Auto-attribution results (no response = the owner did not receive it)");
             A("ui.at.autoCol.outcome", "结果", "Result");
             A("ui.at.autoCol.owner", "归属进程", "Owner process");
             A("ui.at.autoCol.note", "说明", "Explanation");
@@ -1706,7 +1682,9 @@ namespace HotkeyHound.Core
             A("reserved.fullscreenSomeApps", "在部分应用里全屏", "Full screen in some apps");
             A("reserved.switchWindows", "切换窗口", "Switch windows");
             A("reserved.switchWindowsReverse", "反向切换窗口", "Switch windows in reverse");
-            A("reserved.closeWindow", "关闭当前窗口", "Close the current window");
+            A("reserved.closeWindow",
+              "向活动窗口发送关闭请求；在桌面通常会打开关机对话框",
+              "Ask the active window to close; on the desktop it usually opens the shut-down dialog");
             A("reserved.cycleWindows", "按顺序切换窗口", "Cycle through windows in order");
             A("reserved.windowSystemMenu", "打开窗口系统菜单", "Open the window's system menu");
             A("reserved.copyWindow", "截取当前窗口到剪贴板", "Copy the current window to the clipboard");

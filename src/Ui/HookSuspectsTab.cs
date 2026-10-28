@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -28,9 +28,9 @@ namespace HotkeyHound.Ui
 
             var title = new Label();
             title.Text = L10n.T("ui.hs.title");
-            title.Font = UiTheme.TitleFont(11F);
+            title.Font = UiTheme.TitleFont(14F);
             title.AutoSize = true;
-            title.Margin = new Padding(0, 2, 0, 2);
+            title.Margin = new Padding(0, 2, 0, 4);
 
             var hint = UiTheme.StackLabel(L10n.T("ui.hs.hint") + "\r\n" + L10n.T("ui.hs.levels"), UiTheme.Muted);
 
@@ -79,11 +79,11 @@ namespace HotkeyHound.Ui
             _list.GridLines = true;
             _list.HideSelection = false;
             _list.Columns.Add(L10n.T("ui.col.combo"), 130);
-            _list.Columns.Add(L10n.T("ui.hs.col.software"), 110);
-            _list.Columns.Add(L10n.T("ui.hs.col.module"), 100);
-            _list.Columns.Add(L10n.T("ui.col.evidence"), 84);
-            _list.Columns.Add(L10n.T("ui.hs.col.process"), 72);
-            _list.Columns.Add(L10n.T("ui.hs.col.config"), 72);
+            _list.Columns.Add(L10n.T("ui.hs.col.software"), 130);
+            _list.Columns.Add(L10n.T("ui.hs.col.module"), 140);
+            _list.Columns.Add(L10n.T("ui.col.evidence"), 110);
+            _list.Columns.Add(L10n.T("ui.hs.col.process"), 100);
+            _list.Columns.Add(L10n.T("ui.hs.col.config"), 100);
             _list.Columns.Add(L10n.T("ui.col.note"), 220);
             _list.Columns.Add(L10n.T("ui.hs.col.source"), 200);
             // 来源路径列吃满剩余宽度：长路径不再截断，最大化不再留白。

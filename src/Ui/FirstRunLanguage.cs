@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
 using HotkeyHound.Core;
@@ -55,9 +55,7 @@ namespace HotkeyHound.Ui
             heading.Margin = new Padding(0, 0, 0, 10);
 
             var explain = new Label();
-            explain.Text = "HotkeyHound speaks English and Simplified Chinese.\r\n"
-                         + "You can change this at any time in Report & About → Language.\r\n"
-                         + "HotkeyHound 支持英文与简体中文，之后可随时在「报告与关于」页切换。";
+            explain.Text = "You can change this later. / 之后可随时更改。";
             explain.AutoSize = true;
             explain.Dock = DockStyle.Fill;
             explain.ForeColor = UiTheme.Muted;
@@ -104,6 +102,7 @@ namespace HotkeyHound.Ui
             root.Controls.Add(new Label(), 0, 4);
             root.Controls.Add(buttonRow, 0, 5);
             Controls.Add(root);
+            UiTheme.ApplyTree(this);
             AcceptButton = ok;
 
             // 直接关窗（X / Esc）按默认英文处理：第一次打开就能用，不会问第二遍。

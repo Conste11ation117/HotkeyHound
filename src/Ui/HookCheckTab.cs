@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
@@ -21,6 +21,7 @@ namespace HotkeyHound.Ui
     public sealed class HookCheckTab : UserControl
     {
         private readonly MainForm _host;
+        private readonly Button _captureButton;
         private readonly Button _armButton;
         private readonly Button _stopButton;
         private readonly TextBox _comboBox;
@@ -29,6 +30,10 @@ namespace HotkeyHound.Ui
         private readonly ListBox _candidates;
         private readonly ListBox _comparisons;
         private readonly System.Windows.Forms.Timer _tick;
+
+        /// <summary>捕获组合键时临时使用的低层键盘钩子；捕获到一次就立刻卸载。</summary>
+        private HookSniffer _capture;
+        private Action<string> _captureHandler;
 
         private volatile bool _busy;
 
@@ -41,7 +46,7 @@ namespace HotkeyHound.Ui
 
             var title = new Label();
             title.Text = L10n.T("ui.hk.title");
-            title.Font = UiTheme.TitleFont(12F);
+            title.Font = UiTheme.TitleFont(14F);
             title.AutoSize = true;
             title.Margin = new Padding(0, 2, 0, 4);
 
@@ -57,9 +62,17 @@ namespace HotkeyHound.Ui
             _comboBox = new TextBox();
             _comboBox.Width = 200;
             _comboBox.Text = "Ctrl+Alt+M";
+            // 组合键用钩子捕获，不再手输：手输容易少写修饰键，也记不住 Win/Alt 的写法。
+            _comboBox.ReadOnly = true;
             _comboBox.Margin = new Padding(0, 4, 8, 4);
             try { _comboBox.Font = UiTheme.MonoFont(10F); }
             catch (Exception) { }
+
+            _captureButton = new Button();
+            _captureButton.Text = L10n.T("ui.hk.capture");
+            _captureButton.Size = new Size(150, 38);
+            _captureButton.Margin = new Padding(0, 2, 8, 2);
+            _captureButton.Click += OnCaptureClick;
 
             _armButton = new Button();
             _armButton.Text = L10n.T("ui.hk.arm");
@@ -77,6 +90,7 @@ namespace HotkeyHound.Ui
 
             inputRow.Controls.Add(comboCaption);
             inputRow.Controls.Add(_comboBox);
+            inputRow.Controls.Add(_captureButton);
             inputRow.Controls.Add(_armButton);
             inputRow.Controls.Add(_stopButton);
 
@@ -190,6 +204,81 @@ namespace HotkeyHound.Ui
             _tick = new System.Windows.Forms.Timer();
             _tick.Interval = 200;
             _tick.Tick += OnTick;
+        }
+
+        // ------------------------------------------------------------ 组合键捕获
+
+        private void OnCaptureClick(object sender, EventArgs e)
+        {
+            // 再点一次＝取消捕获：不要留着一个静默运行的键盘钩子。
+            if (_capture != null)
+            {
+                StopCapture();
+                SetStatus(UiTheme.Muted, L10n.T("ui.hk.notArmed"));
+                return;
+            }
+
+            var sniffer = new HookSniffer();
+            _captureHandler = delegate (string text)
+            {
+                if (IsDisposed) return;
+                try { BeginInvoke(new Action<string>(ApplyCapturedCombo), text); }
+                catch (Exception) { }
+            };
+            sniffer.KeySeen += _captureHandler;
+
+            bool ok = false;
+            string error = null;
+            try
+            {
+                ok = sniffer.Start();
+                if (!ok) error = sniffer.LastError;
+            }
+            catch (Exception ex) { error = ex.Message; }
+
+            if (!ok)
+            {
+                sniffer.KeySeen -= _captureHandler;
+                _captureHandler = null;
+                try { sniffer.Dispose(); }
+                catch (Exception) { }
+                SetStatus(UiTheme.Error, L10n.F("ui.hk.captureFailed", error ?? L10n.T("common.unknown")));
+                return;
+            }
+
+            _capture = sniffer;
+            SetStatus(UiTheme.Warning, L10n.T("ui.hk.capturing"));
+        }
+
+        private void ApplyCapturedCombo(string text)
+        {
+            StopCapture();
+            if (string.IsNullOrEmpty(text)) return;
+            _comboBox.Text = text;
+            SetStatus(UiTheme.Muted, L10n.F("ui.hk.captured", text));
+        }
+
+        /// <summary>供主窗口关闭时调用，确保捕获用的钩子不会留着。</summary>
+        public void StopCaptureIfActive()
+        {
+            StopCapture();
+        }
+
+        private void StopCapture()
+        {
+            var sniffer = _capture;
+            _capture = null;
+            if (sniffer == null) return;
+            if (_captureHandler != null)
+            {
+                try { sniffer.KeySeen -= _captureHandler; }
+                catch (Exception) { }
+                _captureHandler = null;
+            }
+            try { sniffer.Stop(); }
+            catch (Exception) { }
+            try { sniffer.Dispose(); }
+            catch (Exception) { }
         }
 
         private void SetStatus(Color color, string text)

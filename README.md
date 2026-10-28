@@ -20,7 +20,7 @@ MIT licensed. *Co-developed with Kimi Code.* · **Landing page:** <https://const
 1. Download `HotkeyHound.exe` from [Releases](../../releases) and double-click it. Nothing is installed.
 2. **First launch asks for the interface language** — English by default, 中文 available; you can change it later on the Report & About page. The choice is stored in `%LOCALAPPDATA%\HotkeyHound\settings.ini`.
 3. The app opens on **Overview**. Click **Start scan** (开始扫描). It takes a second or two: engine A probes ~1650 combinations, engine D reads the config files of known software.
-4. On this machine the result is: **~220 combinations occupied**, **54 declared** in config files, **1651 rows** in the truth table. Yours will differ — that is the point of scanning.
+4. On this machine the result is: **~220 combinations occupied**, **56 declared** in config files, **1651 rows** in the truth table. Yours will differ — that is the point of scanning.
 5. **Report & About → Generate report** writes one self-contained HTML file you can send to someone else.
 
 ## "My shortcut does nothing." Which case am I in?
@@ -199,7 +199,7 @@ cannot see hooks.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshot-overview.png" width="46%" alt="Occupancy scan: ~220 occupied combinations, 54 declared, 1651 truth-table rows" />
+  <img src="docs/screenshot-overview.png" width="46%" alt="Occupancy scan: ~220 occupied combinations, 56 declared, 1651 truth-table rows" />
   <img src="docs/screenshot-truth.png" width="46%" alt="Truth table grouped by declaration status" />
   <img src="docs/screenshot-keymonitor.png" width="46%" alt="Key monitor: raw input, low-level hook and window message layers" />
   <img src="docs/screenshot-hooksuspects.png" width="46%" alt="Hook suspects with evidence levels and config paths" />

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -26,6 +26,13 @@ namespace HotkeyHound.Ui
 
             // ------------------------------------------------------------ 顶部：自动换行堆栈
             var top = UiTheme.NewStack();
+
+            var heading = new Label();
+            heading.Text = L10n.T("ui.tab.overview");
+            heading.Font = UiTheme.TitleFont(14F);
+            heading.AutoSize = true;
+            heading.Margin = new Padding(0, 2, 0, 4);
+            UiTheme.StackAdd(top, heading);
 
             var buttonRow = UiTheme.NewFlowRow();
 
@@ -92,37 +99,67 @@ namespace HotkeyHound.Ui
                 box.Dock = DockStyle.Fill;
                 box.Margin = new Padding(3);
 
+                // 两行布局：数值独占上部、标题贴下。之前用绝对坐标，高 DPI 下数字会压到标题上。
+                var stack = new TableLayoutPanel();
+                stack.Dock = DockStyle.Fill;
+                stack.ColumnCount = 1;
+                stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                stack.RowCount = 2;
+                stack.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                stack.Padding = new Padding(12, 6, 12, 8);
+                stack.Margin = new Padding(0);
+                try { stack.BackColor = Color.Transparent; }
+                catch (Exception) { }
+
                 _cardValues[i] = new Label();
                 _cardValues[i].Text = "—";
                 _cardValues[i].Font = UiTheme.TitleFont(16F);
                 _cardValues[i].ForeColor = UiTheme.Accent;
-                _cardValues[i].Location = new Point(12, 8);
                 _cardValues[i].AutoSize = true;
+                _cardValues[i].Dock = DockStyle.Fill;
+                _cardValues[i].TextAlign = ContentAlignment.BottomLeft;
+                _cardValues[i].Margin = new Padding(0);
 
                 _cardTitles[i] = new Label();
                 _cardTitles[i].Text = titles[i];
                 _cardTitles[i].ForeColor = UiTheme.Muted;
-                _cardTitles[i].Location = new Point(13, 48);
                 _cardTitles[i].AutoSize = true;
+                _cardTitles[i].Dock = DockStyle.Fill;
+                _cardTitles[i].TextAlign = ContentAlignment.TopLeft;
+                _cardTitles[i].Margin = new Padding(0);
 
-                box.Controls.Add(_cardValues[i]);
-                box.Controls.Add(_cardTitles[i]);
+                stack.Controls.Add(_cardValues[i], 0, 0);
+                stack.Controls.Add(_cardTitles[i], 0, 1);
+                box.Controls.Add(stack);
                 cards.Controls.Add(box, i, 0);
             }
+
+            try
+            {
+                // 数值 + 标题 + 内边距：按实际字体高度算，避免高 DPI 下两行叠在一起。
+                int needed = _cardValues[0].Font.Height + _cardTitles[0].Font.Height + 26;
+                if (cards.Height < needed) cards.Height = needed;
+            }
+            catch (Exception) { }
 
             // ------------------------------------------------------------ 提示与列表
             // 提示文字用自动换行的堆栈标签：普通的 Dock=Top+AutoSize 标签不会换行，右端会被窗口裁掉。
             var hint = UiTheme.StackLabel(L10n.T("ui.ov.hint"), UiTheme.Muted);
-            hint.Padding = new Padding(2, 4, 2, 6);
+            hint.Padding = new Padding(2, 4, 2, 2);
+            var missHint = UiTheme.StackLabel(L10n.T("ui.ov.missHint"), UiTheme.Muted);
+            missHint.Padding = new Padding(2, 0, 2, 6);
             var hintPanel = new TableLayoutPanel();
             hintPanel.Dock = DockStyle.Top;
             hintPanel.AutoSize = true;
             hintPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             hintPanel.ColumnCount = 1;
             hintPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            hintPanel.RowCount = 1;
+            hintPanel.RowCount = 2;
+            hintPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             hintPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             hintPanel.Controls.Add(hint, 0, 0);
+            hintPanel.Controls.Add(missHint, 0, 1);
 
             _list = new ListView();
             _list.Dock = DockStyle.Fill;
@@ -133,7 +170,7 @@ namespace HotkeyHound.Ui
             _list.Columns.Add(L10n.T("ui.col.combo"), 170);
             _list.Columns.Add(L10n.T("ui.col.state"), 80);
             _list.Columns.Add(L10n.T("ui.col.owner"), 260);
-            _list.Columns.Add(L10n.T("ui.col.evidence"), 80);
+            _list.Columns.Add(L10n.T("ui.col.evidence"), 100);
             _list.Columns.Add(L10n.T("ui.col.note"), 260);
             // 备注列吃满剩余宽度：最大化时不再截断、右边不再留白。
             UiTheme.FillColumn(_list, 4, 240);
@@ -204,7 +241,8 @@ namespace HotkeyHound.Ui
                 _list.Items.Clear();
                 foreach (TruthRow r in s.Truth.Rows)
                 {
-                    if (r.Kind != TruthKind.MatchesDeclared && r.Kind != TruthKind.RegisteredButUnowned) continue;
+                    if (r.Kind != TruthKind.MatchesDeclared && r.Kind != TruthKind.RegisteredButUnowned
+                        && r.Kind != TruthKind.SystemReserved) continue;
                     var item = new ListViewItem(r.Combo.Display());
                     item.SubItems.Add(L10n.T("rep.state.occupied"));
                     item.SubItems.Add(string.IsNullOrEmpty(r.DeclaredBy)
@@ -213,6 +251,7 @@ namespace HotkeyHound.Ui
                     item.SubItems.Add(r.Evidence);
                     item.SubItems.Add(r.Note);
                     if (r.Kind == TruthKind.RegisteredButUnowned) item.ForeColor = UiTheme.Error;
+                    else if (r.Kind == TruthKind.SystemReserved) item.ForeColor = UiTheme.Info;
                     _list.Items.Add(item);
                 }
             }

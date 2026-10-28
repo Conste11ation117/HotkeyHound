@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -34,7 +34,7 @@ namespace HotkeyHound.Ui
 
             var heading = new Label();
             heading.Text = L10n.T("ui.rt.heading");
-            heading.Font = UiTheme.TitleFont(15F);
+            heading.Font = UiTheme.TitleFont(16F);
             heading.AutoSize = true;
             heading.Margin = new Padding(0, 2, 0, 10);
 

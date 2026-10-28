@@ -4,12 +4,13 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
-## [2.0.0-pre] — 2026-10-19 Interface honesty
+## [2.0.0] — 2026-10-28 “Hurricane”
 
-Three user-visible defects fixed: Engine C cried "swallowed" when it could not possibly know, the
-"Restart as administrator" button silently did nothing, and text was clipped all over the UI —
-including the remark columns when maximized. Also new in this release: a first-run language picker,
-a rewritten README, and self-tests that no longer assume the developer's machine.
+The biggest interface change since 1.0 — a sidebar instead of tabs, a collapsible log drawer and
+DPI-aware lists — together with four correctness fixes (Engine C's verdicts, the numpad virtual-key
+table, Windows-reserved shortcuts, and crash reporting) and an exception backstop inside the
+injected hook DLL. The first launch now asks for a language, the hook-detection page can capture a
+combination instead of asking you to type it, and the README was rewritten around what you see.
 
 ### Fixed: Engine C false alarms
 
@@ -19,10 +20,19 @@ a rewritten README, and self-tests that no longer assume the developer's machine
   two prerequisites (`attributionActive`, `scanDone`) and returns a new **Inconclusive** verdict naming
   the missing prerequisite instead of guessing. Arming while Engine B is off asks once for consent to
   co-start it (still one explicit user action; no hook is ever installed silently).
+- **A session where nothing was pressed now says so.** A timeout with no key down used to be judged
+  from an empty observation set; it is now its own `noInput` evidence and explanation.
 - **`Stop()` could leak the hook thread and wedge the page.** `WM_QUIT` posted before the thread created
   its message queue was simply lost. The post is now retried until the thread exits, re-posted once more
   after a join timeout, and a final failure is logged instead of leaving a zombie. The thread id is
   cleared on exit, so a stale id can never post quit into an unrelated thread.
+
+### Fixed: the numpad virtual-key table was off by one
+
+- `VK_SEPARATOR (0x6C)`, `VK_SUBTRACT (0x6D)`, `VK_DECIMAL (0x6E)` and `VK_DIVIDE (0x6F)` were mapped
+  one slot early (0x6C..0x6E), so `Num-` / `Num.` / `Num/` were reported under the wrong names and the
+  scanner probed the wrong keys. The name table, the `Separator` / `Subtract` / `Decimal` / `Divide`
+  aliases and the probe list now agree; T1 asserts every name round-trips through format and parse.
 
 ### Fixed: "Restart as administrator" never restarted
 
@@ -34,18 +44,24 @@ a rewritten README, and self-tests that no longer assume the developer's machine
   ("HotkeyHound — ..."), so it never matched: it now enumerates top-level windows by title prefix.
 - A second launch waits up to 1.5 s for an abandoned mutex before concluding another instance is alive.
 
-### Fixed: text truncation and UI polish
+### Fixed: Windows-reserved shortcuts are their own row type
 
-- The last text column of every list (remark / path / evidence / description) now stretches to the
-  remaining width on resize in all five tabs; previously maximized windows wasted most of their width.
-- Tab header areas use auto-wrapping stacks instead of fixed-height labels — long hints no longer clip
-  at any window width.
-- Key-monitor verdict and stuck-modifier cards grow with their text; the report page's release note and
-  known-limitations blocks wrap to the actual window width and no longer overlap each other.
-- Toolbar now carries the app icon, title and version with right-aligned help; the status bar shows
-  version and language; ListViews are double-buffered (no drag flicker); overview counters sit on
-  rounded cards; primary actions are visually emphasized.
-- `--screenshot` mode captures every page at both 1080x720 and 1920x1080 (files suffixed `-wide`).
+- The truth table used to file Alt+F4, Alt+Tab, Win+L and friends under *occupied, nobody claims it*,
+  which reads like a mystery process is holding them. They now get a fifth state,
+  **Windows built-in shortcut**, with its own explanation, note and filter in the truth table, and the
+  explanation says explicitly that this is Windows behaviour and not a third-party application.
+- The built-in table is now also asserted end to end (99 of 99 entries parse), and the CLI
+  `--attribute-all` batch includes reserved combinations instead of silently skipping them.
+
+### Hardened: the injected hook procedure can no longer take a host process down
+
+- The hook procedure runs inside foreign processes. Any access violation there (our own bug, or a
+  corrupted `MSG*` left by an upstream hook in the chain) used to take that process down with it. The
+  whole hook body is now wrapped in `__try/__except`: on a fault it drops that one message and still
+  calls `CallNextHookEx`, so the host process is unaffected.
+- The shared-memory `INIT_ONCE` callback gets the same treatment and returns `FALSE` on a fault, which
+  leaves the one-shot initialisation retryable instead of stranding other threads of that process in
+  the init wait.
 
 ### Added
 
@@ -53,17 +69,40 @@ a rewritten README, and self-tests that no longer assume the developer's machine
   the interface language before it builds the main window, defaulting to **English**; the choice is
   written to `%LOCALAPPDATA%\HotkeyHound\settings.ini` and can be changed later on the Report & About
   page. Command-line modes and screenshot mode never show it.
+- **A crash log instead of a raw CLR dialog.** Unhandled UI and background exceptions are appended to
+  `%LOCALAPPDATA%\HotkeyHound\error.log` with version and timestamp, and the user sees one short,
+  bilingual message pointing at that file instead of a stack trace.
+- **Capture a combination.** The hook-detection page can install a temporary low-level hook, read the
+  key you press, fill the field and unload it again (and unloading also happens when the page is left
+  or the window closes), so the tested combination no longer has to be typed by hand.
 - **README rewritten around what you see and click**: a 30-second start, a symptom → page → button →
   result table, and a page-by-page summary, before the engine/comparison material.
 
+### Interface
+
+- Seven pages are now reached from a **sidebar** instead of a tab strip; the selected page is
+  highlighted and the sidebar widens for English labels instead of clipping them.
+- The log is a **collapsible drawer** (one click, 36 px when folded), so the main content keeps the
+  vertical space and the log is still one click away.
+- Header carries the application icon, product name, one-line description and a Help button; the status
+  bar keeps the version and the current language.
+- List columns are **DPI-aware**: fixed widths scale with the display, headers are measured so that
+  "Process running" / "Config state" are never cut, and when the window is too narrow the fixed
+  columns shrink proportionally instead of pushing the last column off-screen.
+- Buttons size themselves to their text, so "生成 HTML 报告" / "Arm (installs hook)" are never truncated.
+- Overview counters sit on rounded cards with the value and label in separate rows (no overlap at high
+  DPI); palette refreshed for both light and dark themes; lists are double-buffered.
+
 ### Tests
 
-- Self-test T7 now walks all seven verdict branches, including the two prerequisite-missing ones that
-  must yield Inconclusive.
-- **T3 and T4 no longer assume PowerToys is installed.** T3 now parses a synthetic Keyboard Manager
-  document on every machine (it verifies the parser itself) and only cross-checks the real config when
-  one exists; on a machine without PowerToys the test is reported as Inconclusive instead of failed.
-  T4 skips the "declared must match the truth table" assertion when no adapter source is present.
+- T1 asserts the virtual-key table end to end, including the numpad names and aliases.
+- T4 asserts the fifth truth-table state, the Windows-reserved classification (`Alt+F4`) and that all
+  99 built-in entries parse.
+- T7 walks all seven verdict branches, including the two prerequisite-missing ones that must yield
+  Inconclusive.
+- T3 and T4 no longer assume PowerToys is installed: T3 parses a synthetic Keyboard Manager document
+  on every machine and only cross-checks the real config when one exists; T4 skips the
+  "declared must match the truth table" assertion when no adapter source is present.
 
 ## [1.3.1] — 2026-10-19 Hardening
 

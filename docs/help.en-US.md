@@ -1,7 +1,8 @@
 ﻿# HotkeyHound Help (English)
 
-HotkeyHound is a Windows global-hotkey conflict troubleshooting tool. It helps you see **which hotkeys are
-occupied, who occupies them, why a key you press does nothing, and which keys are free to use.**
+**Quick start:** the first launch asks you to choose the interface language (change it later under “Report &
+about”); then click “Scan overview → Start scan” to see which combinations are occupied; use “Key attribution” to
+find the owner; use “Hook detection” when a key press does nothing.
 
 It only reads and probes: it never changes your configuration, never writes the registry, and never ends any process.
 

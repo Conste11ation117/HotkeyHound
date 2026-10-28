@@ -182,7 +182,7 @@ Secure Boot / HVCI 的 Windows 上会被拦，而且**依然看不到钩子**。
 ## 截图
 
 <p align="center">
-  <img src="docs/screenshot-overview.png" width="46%" alt="占用扫描：约 220 个已占用组合、54 条声明、1651 行真相表" />
+  <img src="docs/screenshot-overview.png" width="46%" alt="占用扫描：约 220 个已占用组合、56 条声明、1651 行真相表" />
   <img src="docs/screenshot-truth.png" width="46%" alt="真相表按声明状态分组" />
   <img src="docs/screenshot-keymonitor.png" width="46%" alt="按键监视：raw input / 低层钩子 / 窗口消息三层" />
   <img src="docs/screenshot-hooksuspects.png" width="46%" alt="钩子嫌疑清单，带证据等级与配置路径" />

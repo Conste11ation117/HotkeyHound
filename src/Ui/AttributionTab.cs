@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Text;
 using System.Threading;
@@ -39,11 +39,12 @@ namespace HotkeyHound.Ui
 
             var title = new Label();
             title.Text = L10n.T("ui.at.title");
-            title.Font = UiTheme.TitleFont(12F);
+            title.Font = UiTheme.TitleFont(14F);
             title.AutoSize = true;
-            title.Margin = new Padding(0, 2, 0, 2);
+            title.Margin = new Padding(0, 2, 0, 4);
 
             var hint = UiTheme.StackLabel(L10n.T("ui.at.hint"), UiTheme.Muted);
+            var missHint = UiTheme.StackLabel(L10n.T("ui.at.missHint"), UiTheme.Muted);
 
             var buttonRow = UiTheme.NewFlowRow();
 
@@ -72,8 +73,6 @@ namespace HotkeyHound.Ui
 
             _statusLabel = UiTheme.StackLabel(L10n.T("ui.at.notStarted"), UiTheme.Muted);
 
-            var warning = UiTheme.StackLabel(BuildWarningText(), UiTheme.Warning);
-
             var autoRow = UiTheme.NewFlowRow();
             _autoButton = new Button();
             _autoButton.Text = L10n.T("ui.at.autoButton");
@@ -83,12 +82,19 @@ namespace HotkeyHound.Ui
             autoRow.Controls.Add(_autoButton);
 
             _autoStatus = UiTheme.StackLabel("", UiTheme.Muted);
+            // 空状态标签不该占一整行（否则开始按钮和结果表之间会出现一块无意义空白）。
+            _autoStatus.Visible = false;
+            _autoStatus.TextChanged += delegate
+            {
+                bool show = !string.IsNullOrEmpty(_autoStatus.Text);
+                if (_autoStatus.Visible != show) _autoStatus.Visible = show;
+            };
 
             UiTheme.StackAdd(top, title);
             UiTheme.StackAdd(top, hint);
+            UiTheme.StackAdd(top, missHint);
             UiTheme.StackAdd(top, buttonRow);
             UiTheme.StackAdd(top, _statusLabel);
-            UiTheme.StackAdd(top, warning);
             UiTheme.StackAdd(top, autoRow);
             UiTheme.StackAdd(top, _autoStatus);
 
@@ -102,7 +108,7 @@ namespace HotkeyHound.Ui
             _list.Columns.Add(L10n.T("ui.at.col.time"), 90);
             _list.Columns.Add(L10n.T("ui.at.col.process"), 170);
             _list.Columns.Add(L10n.T("ui.at.col.pid"), 70);
-            _list.Columns.Add(L10n.T("ui.at.col.bitness"), 60);
+            _list.Columns.Add(L10n.T("ui.at.col.bitness"), 80);
             _list.Columns.Add(L10n.T("ui.col.combo"), 160);
             _list.Columns.Add(L10n.T("ui.col.path"), 300);
             _list.Columns.Add(L10n.T("ui.at.col.elevated"), 96);
@@ -152,21 +158,6 @@ namespace HotkeyHound.Ui
             Controls.Add(top);
 
             _host.Attribution.RecordReceived += OnRecordReceived;
-        }
-
-        private static string BuildWarningText()
-        {
-            var sb = new StringBuilder();
-            if (ProcessIntegrity.IsBelowMedium)
-            {
-                sb.Append(L10n.F("ui.at.warn.low", ProcessIntegrity.Describe(ProcessIntegrity.Current))).Append("\r\n");
-            }
-            if (!AppInfo.IsAdministrator())
-            {
-                sb.Append(L10n.T("ui.at.warn.notAdmin"));
-            }
-            if (sb.Length == 0) sb.Append(L10n.T("ui.at.warn.ok"));
-            return sb.ToString();
         }
 
         /// <summary>回调来自钩子线程，必须异步回到 UI 线程（回调里同步 Invoke 会拖住钩子线程，拖慢全系统输入）。</summary>

@@ -94,9 +94,9 @@ namespace HotkeyHound.Core
             list.Add(0xBB); // = +
             list.Add(0x6A); // Num *
             list.Add(0x6B); // Num +
-            list.Add(0x6C); // Num -
-            list.Add(0x6E); // Num /
-            list.Add(0x6D); // Num .
+            list.Add(0x6D); // Num -
+            list.Add(0x6F); // Num /
+            list.Add(0x6E); // Num .
             for (uint i = 0; i < 10; i++) list.Add(0x60 + i);              // Num0-9
             list.Add(0x90); // NumLock
             list.Add(0x91); // ScrollLock

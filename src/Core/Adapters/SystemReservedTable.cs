@@ -76,6 +76,9 @@ namespace HotkeyHound.Core.Adapters
             new[] { "CapsLock", "reserved.toggleCapsLock" }
         };
 
+        /// <summary>内置表条目总数（含 Win+0..9 的 4 组任务栏变体）；自测用它核对全表都能解析。</summary>
+        public static int EntryCount { get { return Entries.Length + 40; } }
+
         /// <summary>已知归属提示：组合键 → 用途说明。</summary>
         public static Dictionary<string, string> Hints()
         {

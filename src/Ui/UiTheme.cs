@@ -131,42 +131,42 @@ namespace HotkeyHound.Ui
         {
             if (IsDark)
             {
-                Background = Color.FromArgb(23, 25, 29);
-                Surface = Color.FromArgb(31, 35, 42);
-                SurfaceAlt = Color.FromArgb(38, 43, 52);
-                Text = Color.FromArgb(230, 233, 239);
-                Muted = Color.FromArgb(154, 163, 176);
-                Accent = Color.FromArgb(91, 155, 255);
-                OnAccent = Color.FromArgb(12, 20, 34);
-                Success = Color.FromArgb(123, 216, 143);
-                Warning = Color.FromArgb(240, 180, 90);
+                Background = Color.FromArgb(20, 22, 27);
+                Surface = Color.FromArgb(28, 32, 39);
+                SurfaceAlt = Color.FromArgb(37, 42, 51);
+                Text = Color.FromArgb(232, 235, 242);
+                Muted = Color.FromArgb(154, 164, 180);
+                Accent = Color.FromArgb(108, 140, 255);
+                OnAccent = Color.FromArgb(14, 19, 32);
+                Success = Color.FromArgb(90, 205, 145);
+                Warning = Color.FromArgb(242, 184, 92);
                 Error = Color.FromArgb(255, 123, 114);
-                Info = Color.FromArgb(138, 180, 255);
-                Border = Color.FromArgb(54, 60, 71);
-                BannerBack = Color.FromArgb(58, 42, 18);
-                BannerText = Color.FromArgb(245, 199, 126);
-                ButtonFace = Color.FromArgb(43, 48, 58);
-                ButtonHover = Color.FromArgb(53, 59, 71);
-                ButtonActive = Color.FromArgb(64, 71, 85);
+                Info = Color.FromArgb(139, 177, 255);
+                Border = Color.FromArgb(56, 63, 76);
+                BannerBack = Color.FromArgb(54, 43, 24);
+                BannerText = Color.FromArgb(246, 205, 139);
+                ButtonFace = Color.FromArgb(36, 41, 50);
+                ButtonHover = Color.FromArgb(46, 52, 63);
+                ButtonActive = Color.FromArgb(57, 64, 77);
             }
             else
             {
-                Background = Color.FromArgb(245, 246, 248);
+                Background = Color.FromArgb(244, 246, 251);
                 Surface = Color.White;
-                SurfaceAlt = Color.FromArgb(238, 241, 246);
-                Text = Color.FromArgb(27, 29, 33);
-                Muted = Color.FromArgb(90, 96, 112);
-                Accent = Color.FromArgb(47, 111, 235);
+                SurfaceAlt = Color.FromArgb(235, 239, 247);
+                Text = Color.FromArgb(26, 31, 43);
+                Muted = Color.FromArgb(95, 105, 124);
+                Accent = Color.FromArgb(57, 92, 214);
                 OnAccent = Color.White;
-                Success = Color.FromArgb(20, 110, 40);
-                Warning = Color.FromArgb(154, 98, 10);
-                Error = Color.FromArgb(158, 40, 32);
-                Info = Color.FromArgb(60, 80, 160);
-                Border = Color.FromArgb(216, 220, 228);
+                Success = Color.FromArgb(21, 112, 63);
+                Warning = Color.FromArgb(145, 91, 8);
+                Error = Color.FromArgb(174, 47, 39);
+                Info = Color.FromArgb(55, 83, 174);
+                Border = Color.FromArgb(216, 221, 231);
                 BannerBack = Color.FromArgb(255, 246, 229);
-                BannerText = Color.FromArgb(140, 55, 20);
-                ButtonFace = Color.FromArgb(250, 251, 252);
-                ButtonHover = Color.FromArgb(238, 242, 249);
+                BannerText = Color.FromArgb(132, 60, 18);
+                ButtonFace = Color.FromArgb(251, 252, 254);
+                ButtonHover = Color.FromArgb(239, 243, 250);
                 ButtonActive = Color.FromArgb(226, 233, 244);
             }
         }
@@ -243,6 +243,36 @@ namespace HotkeyHound.Ui
             button.Tag = "primary";
         }
 
+        /// <summary>侧栏导航项：用 Tag 记住选中态，配色在 ApplyTree 里统一处理。</summary>
+        public static void MarkNavigation(Button button, bool selected)
+        {
+            if (button == null) return;
+            button.Tag = selected ? "nav-selected" : "nav";
+        }
+
+        /// <summary>
+        /// 按钮按文字宽度自适应：写死宽度是「生成 HTML 报…」「布防（安装钩…」这类截字的根因。
+        /// 下限保留原设计宽度（但不超过 180，免得超长按钮把行撑爆），缺字时由 AutoSize 补齐。
+        /// </summary>
+        public static void AutoSizeButton(Button button)
+        {
+            if (button == null) return;
+            string tag = button.Tag as string;
+            if (tag == "nav" || tag == "nav-selected") return;
+            try
+            {
+                int minWidth = Math.Min(button.Width > 0 ? button.Width : 120, 180);
+                int minHeight = button.Height > 0 ? button.Height : 34;
+                button.MinimumSize = new Size(Math.Max(button.MinimumSize.Width, minWidth),
+                                              Math.Max(button.MinimumSize.Height, minHeight));
+                button.AutoSize = true;
+                button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                button.Padding = new Padding(Math.Max(10, button.Padding.Left), Math.Max(4, button.Padding.Top),
+                                             Math.Max(10, button.Padding.Right), Math.Max(4, button.Padding.Bottom));
+            }
+            catch (Exception) { }
+        }
+
         // ------------------------------------------------------------------ 布局助手（2.0.0）
         // 目标只有一个：任何窗口宽度、任何语言下，文字都不许被截断。
         // 顶部说明区一律用「垂直堆栈 + AutoSize 行」，换行文本自动撑高；
@@ -311,25 +341,105 @@ namespace HotkeyHound.Ui
         public static void FillColumn(ListView list, int index, int minWidth)
         {
             if (list == null || index < 0) return;
+
+            // ListView 的列宽不会跟着 DPI 自动缩放：在 150%/200% 下原来 80px 的「状态」列
+            // 只够显示「已占用…」。这里按当前设备 DPI 等比放大所有固定列，宁可横向滚动，
+            // 也不要每个单元格都截字。调用点每个列表只调用一次，不会反复放大。
+            try
+            {
+                float scale = 1F;
+                using (Graphics g = list.CreateGraphics()) scale = g.DpiX / 96F;
+                if (scale > 1.01F)
+                {
+                    for (int i = 0; i < list.Columns.Count; i++)
+                    {
+                        if (i == index || list.Columns[i].Width <= 0) continue;
+                        list.Columns[i].Width = (int)Math.Round(list.Columns[i].Width * scale);
+                    }
+                    minWidth = (int)Math.Round(minWidth * scale);
+                }
+
+                // 表头也必须完整：英文表头往往比中文长（Process running / Config state），
+                // 单靠固定像素会出现「Process r…」这种连表头都读不全的情况。
+                for (int i = 0; i < list.Columns.Count; i++)
+                {
+                    ColumnHeader column = list.Columns[i];
+                    int wanted = TextRenderer.MeasureText(column.Text, list.Font).Width + 28;
+                    if (column.Width < wanted) column.Width = wanted;
+                }
+            }
+            catch (Exception) { }
+
+            // 记住「理想列宽」：窗口放不下时按比例收缩，而不是让固定列把列表撑出横向滚动条
+            // （2.0.0 的按表头测量列宽在默认窗口尺寸下就会溢出，说明列被挤到屏幕外）。
+            int[] baseWidths = new int[list.Columns.Count];
+            for (int i = 0; i < list.Columns.Count; i++) baseWidths[i] = list.Columns[i].Width;
+
             EventHandler fit = delegate (object s, EventArgs e)
             {
                 try
                 {
                     if (list.IsDisposed || list.Columns.Count <= index) return;
                     if (!list.IsHandleCreated || list.ClientSize.Width <= 0) return;
+
+                    int viewport = list.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 4;
+                    if (viewport <= 0) return;
+
                     int used = 0;
                     for (int i = 0; i < list.Columns.Count; i++)
                     {
-                        if (i != index) used += list.Columns[i].Width;
+                        if (i != index) used += baseWidths[i];
                     }
-                    int avail = list.ClientSize.Width - used - SystemInformation.VerticalScrollBarWidth - 4;
-                    list.Columns[index].Width = Math.Max(minWidth, avail);
+
+                    if (used + minWidth > viewport)
+                    {
+                        // 装不下：固定列按比例收缩，但每列不低于「理想宽度的 62%」与 64px 中较大者，
+                        // 免得把「已占用」「实测注册」压成「已…」「实测…」。实在还放不下就让
+                        // 填充列守 minWidth，宁可横向滚动，也不把所有列一起压扁。
+                        int budget = Math.Max(0, viewport - minWidth);
+                        double k = used > 0 ? (double)budget / used : 0.0;
+                        if (k < 0) k = 0;
+                        used = 0;
+                        for (int i = 0; i < list.Columns.Count; i++)
+                        {
+                            if (i == index) continue;
+                            int floor = Math.Max(64, (int)Math.Round(baseWidths[i] * 0.62));
+                            int w = (int)Math.Round(baseWidths[i] * k);
+                            if (w < floor) w = floor;
+                            if (list.Columns[i].Width != w) list.Columns[i].Width = w;
+                            used += w;
+                        }
+                    }
+                    else
+                    {
+                        for (int i = 0; i < list.Columns.Count; i++)
+                        {
+                            if (i == index) continue;
+                            if (list.Columns[i].Width != baseWidths[i]) list.Columns[i].Width = baseWidths[i];
+                        }
+                    }
+
+                    // 填充列优先让出空间：先缩到 160px，只有连 160px 都不剩时才出横向滚动条。
+                    // 之前这里死守 minWidth，导致「其它列刚缩完、填充列又撑回 240」→ 必然横向滚动。
+                    int floorFill = Math.Min(minWidth, 160);
+                    int avail = viewport - used;
+                    list.Columns[index].Width = avail >= floorFill ? avail : floorFill;
                 }
                 catch (Exception) { }
             };
             list.Resize += fit;
             list.HandleCreated += fit;
+            // 页面是「按需显示」的：隐藏期间完成的布局会让列宽按偏窄的宽度算一次，
+            // 之后显示时既没有 Resize 也没有 HandleCreated，列就会一直停留在被压扁的状态。
+            list.VisibleChanged += fit;
+            list.ParentChanged += fit;
             fit(null, null);
+            try
+            {
+                // 布局完成后再算一次（构造期控件还没有最终宽度）。
+                list.BeginInvoke(new Action(delegate () { fit(null, null); }));
+            }
+            catch (Exception) { }
         }
 
         /// <summary>ListView/ListBox 双缓冲：几千行滚动刷新不再闪烁（反射打开受保护属性）。</summary>
@@ -391,7 +501,13 @@ namespace HotkeyHound.Ui
                 }
                 else if (c is Form || c is UserControl || c is TabPage || c is SplitContainer || c is Panel)
                 {
-                    c.BackColor = c is GroupBox ? Surface : Background;
+                    string panelTag = c.Tag as string;
+                    // 页眉/侧栏/提示条自己声明了底色：这里只同步前景，别把它刷成页面底色。
+                    if (panelTag == "header" || panelTag == "surface") c.BackColor = Surface;
+                    else if (panelTag == "sidebar") c.BackColor = SurfaceAlt;
+                    else if (panelTag == "banner") c.BackColor = BannerBack;
+                    // 明确写成 Transparent 的堆栈/流式行要保留透明，否则卡片内部会被刷成页面底色。
+                    else if (c.BackColor != Color.Transparent) c.BackColor = c is GroupBox ? Surface : Background;
                     c.ForeColor = Text;
                 }
                 else if (c is GroupBox)
@@ -416,18 +532,31 @@ namespace HotkeyHound.Ui
                 else if (c is Button)
                 {
                     var b = (Button)c;
-                    bool primary = (b.Tag as string) == "primary";
+                    string tag = b.Tag as string;
+                    bool primary = tag == "primary";
+                    bool navSelected = tag == "nav-selected";
+                    bool nav = navSelected || tag == "nav";
                     b.FlatStyle = FlatStyle.Flat;
                     b.UseVisualStyleBackColor = false;
-                    b.BackColor = primary ? Accent : ButtonFace;
-                    b.ForeColor = primary ? OnAccent : Text;
-                    b.FlatAppearance.BorderColor = primary ? Accent : Border;
-                    b.FlatAppearance.MouseOverBackColor = primary ? ControlPaint.Light(Accent, 0.15f) : ButtonHover;
-                    b.FlatAppearance.MouseDownBackColor = primary ? ControlPaint.Dark(Accent, 0.08f) : ButtonActive;
+                    // 文案里的 & 是「Report & about」的一部分，不是快捷键助记符。
+                    b.UseMnemonic = false;
+                    // 先按文字量出宽度再配色：写死宽度的按钮会被语言/字体撑破并截字。
+                    AutoSizeButton(b);
+                    b.BackColor = primary ? Accent : (nav ? (navSelected ? SurfaceAlt : Color.Transparent) : ButtonFace);
+                    b.ForeColor = primary ? OnAccent : (navSelected ? Accent : Text);
+                    b.FlatAppearance.BorderColor = primary ? Accent : (navSelected ? Accent : Border);
+                    b.FlatAppearance.BorderSize = navSelected ? 1 : 1;
+                    b.FlatAppearance.MouseOverBackColor = primary ? ControlPaint.Light(Accent, 0.15f)
+                        : (nav ? SurfaceAlt : ButtonHover);
+                    b.FlatAppearance.MouseDownBackColor = primary ? ControlPaint.Dark(Accent, 0.08f)
+                        : (nav ? SurfaceAlt : ButtonActive);
+                    if (nav) b.TextAlign = ContentAlignment.MiddleLeft;
                 }
-                else if (c is Label)
+                else if (c is Label || c is RadioButton || c is CheckBox)
                 {
                     if (IsDefaultForeColor(c.ForeColor)) c.ForeColor = Text;
+                    var label = c as Label;
+                    if (label != null) label.UseMnemonic = false;
                 }
                 else if (c is StatusStrip)
                 {

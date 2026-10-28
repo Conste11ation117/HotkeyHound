@@ -32,17 +32,21 @@ namespace HotkeyHound.Ui
             try { UiTheme.ApplyFont(this); }
             catch (Exception) { }
 
-            var bar = new Panel();
+            // 流式按钮行：任何语言、任何 DPI 下都不会因为写死坐标而互相压住。
+            var bar = UiTheme.NewFlowRow();
             bar.Dock = DockStyle.Top;
-            bar.Height = 42;
+            bar.AutoSize = true;
+            bar.Padding = new Padding(10, 8, 10, 8);
+            bar.BackColor = UiTheme.SurfaceAlt;
+            bar.Tag = "sidebar";
 
-            _zhButton = MakeButton("help.zh", 8, false);
+            _zhButton = MakeButton("help.zh", false);
             _zhButton.Click += delegate (object s, EventArgs e) { SwitchTo(L10n.Chinese); };
-            _enButton = MakeButton("help.en", 96, false);
+            _enButton = MakeButton("help.en", false);
             _enButton.Click += delegate (object s, EventArgs e) { SwitchTo(L10n.English); };
-            _openButton = MakeButton("help.openBrowser", 190, true);
+            _openButton = MakeButton("help.openBrowser", true);
             _openButton.Click += delegate (object s, EventArgs e) { OpenInBrowser(); };
-            _closeButton = MakeButton("help.close", 340, false);
+            _closeButton = MakeButton("help.close", false);
             _closeButton.Click += delegate (object s, EventArgs e) { Close(); };
 
             bar.Controls.Add(_zhButton);
@@ -58,17 +62,20 @@ namespace HotkeyHound.Ui
 
             Controls.Add(_browser);
             Controls.Add(bar);
+            UiTheme.ApplyTree(this);
 
             LoadHtml();
         }
 
-        private static Button MakeButton(string key, int x, bool wide)
+        private static Button MakeButton(string key, bool wide)
         {
             var b = new Button();
             b.Text = L10n.T(key);
-            b.Location = new Point(x, 8);
-            b.Size = new Size(wide ? 142 : 82, 28);
-            b.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            b.AutoSize = true;
+            b.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            b.MinimumSize = new Size(wide ? 142 : 82, 30);
+            b.Padding = new Padding(12, 0, 12, 0);
+            b.Margin = new Padding(0, 0, 8, 0);
             return b;
         }
 

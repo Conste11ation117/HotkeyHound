@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -22,6 +22,13 @@ namespace HotkeyHound.Ui
 
             var top = UiTheme.NewStack();
 
+            var heading = new Label();
+            heading.Text = L10n.T("ui.tab.truth");
+            heading.Font = UiTheme.TitleFont(14F);
+            heading.AutoSize = true;
+            heading.Margin = new Padding(0, 2, 0, 4);
+            UiTheme.StackAdd(top, heading);
+
             var filterRow = UiTheme.NewFlowRow();
 
             var label = new Label();
@@ -38,7 +45,7 @@ namespace HotkeyHound.Ui
             foreach (TruthKind k in new TruthKind[]
             {
                 TruthKind.MatchesDeclared, TruthKind.DeclaredButNotRegistered,
-                TruthKind.RegisteredButUnowned, TruthKind.FreeAndUndeclared
+                TruthKind.RegisteredButUnowned, TruthKind.SystemReserved, TruthKind.FreeAndUndeclared
             })
             {
                 _filter.Items.Add(TruthTable.KindName(k));
@@ -68,10 +75,10 @@ namespace HotkeyHound.Ui
             _list.GridLines = true;
             _list.HideSelection = false;
             _list.Columns.Add(L10n.T("ui.col.combo"), 160);
-            _list.Columns.Add(L10n.T("ui.col.type"), 110);
+            _list.Columns.Add(L10n.T("ui.col.type"), 180);
             _list.Columns.Add(L10n.T("ui.col.declaredBy"), 280);
-            _list.Columns.Add(L10n.T("ui.col.ownerHint"), 110);
-            _list.Columns.Add(L10n.T("ui.col.evidence"), 90);
+            _list.Columns.Add(L10n.T("ui.col.ownerHint"), 130);
+            _list.Columns.Add(L10n.T("ui.col.evidence"), 100);
             _list.Columns.Add(L10n.T("ui.col.note"), 220);
             // 备注列吃满剩余宽度（2.0.0：修「最大化时备注显示不完整」）。
             UiTheme.FillColumn(_list, 5, 220);
@@ -110,7 +117,7 @@ namespace HotkeyHound.Ui
                 foreach (TruthKind k in new TruthKind[]
                 {
                     TruthKind.MatchesDeclared, TruthKind.DeclaredButNotRegistered,
-                    TruthKind.RegisteredButUnowned, TruthKind.FreeAndUndeclared
+                    TruthKind.RegisteredButUnowned, TruthKind.SystemReserved, TruthKind.FreeAndUndeclared
                 })
                 {
                     if (TruthTable.KindName(k) == selected) { only = k; break; }
@@ -144,6 +151,7 @@ namespace HotkeyHound.Ui
                     {
                         case TruthKind.MatchesDeclared: item.ForeColor = UiTheme.Success; break;
                         case TruthKind.RegisteredButUnowned: item.ForeColor = UiTheme.Error; break;
+                        case TruthKind.SystemReserved: item.ForeColor = UiTheme.Info; break;
                         case TruthKind.DeclaredButNotRegistered: item.ForeColor = UiTheme.Warning; break;
                         default: item.ForeColor = UiTheme.Muted; break;
                     }
