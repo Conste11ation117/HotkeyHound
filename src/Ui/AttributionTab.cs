@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Text;
 using System.Threading;
@@ -106,14 +106,14 @@ namespace HotkeyHound.Ui
             _list.GridLines = true;
             _list.HideSelection = false;
             _list.Columns.Add(L10n.T("ui.at.col.time"), 90);
-            _list.Columns.Add(L10n.T("ui.at.col.process"), 170);
-            _list.Columns.Add(L10n.T("ui.at.col.pid"), 70);
+            _list.Columns.Add(L10n.T("ui.at.col.process"), 140);
+            _list.Columns.Add(L10n.T("ui.at.col.pid"), 60);
             _list.Columns.Add(L10n.T("ui.at.col.bitness"), 80);
-            _list.Columns.Add(L10n.T("ui.col.combo"), 160);
+            _list.Columns.Add(L10n.T("ui.col.combo"), 130);
+            _list.Columns.Add(L10n.T("ui.at.col.elevated"), 80);
             _list.Columns.Add(L10n.T("ui.col.path"), 300);
-            _list.Columns.Add(L10n.T("ui.at.col.elevated"), 96);
             // 路径列吃满剩余宽度（2.0.0：修最大化时截断）。
-            UiTheme.FillColumn(_list, 5, 200);
+            UiTheme.FillColumn(_list, 6, 260);
 
             var autoHeader = new Label();
             autoHeader.Dock = DockStyle.Top;
@@ -134,7 +134,7 @@ namespace HotkeyHound.Ui
             _autoList.Columns.Add(L10n.T("ui.at.autoCol.outcome"), 100);
             _autoList.Columns.Add(L10n.T("ui.at.autoCol.owner"), 180);
             _autoList.Columns.Add(L10n.T("ui.at.autoCol.note"), 460);
-            UiTheme.FillColumn(_autoList, 3, 220);
+            UiTheme.FillColumn(_autoList, 3, 240);
 
             var split = new SplitContainer();
             split.Dock = DockStyle.Fill;
@@ -166,8 +166,7 @@ namespace HotkeyHound.Ui
             if (record == null) return;
             SessionRecords.AddAttribution(record);
             if (IsDisposed) return;
-            try { BeginInvoke(new Action<AttributionRecord>(AppendRecord), record); }
-            catch (Exception) { }
+            UiPost.Post(this, delegate () { AppendRecord(record); });
         }
 
         private void AppendRecord(AttributionRecord record)
@@ -180,14 +179,15 @@ namespace HotkeyHound.Ui
                 item.SubItems.Add(record.Pid.ToString());
                 item.SubItems.Add(string.IsNullOrEmpty(record.Bitness) ? "?" : record.Bitness);
                 item.SubItems.Add(record.Combo == null ? L10n.T("attr.unknownCombo") : record.Combo.Display());
-                item.SubItems.Add(string.IsNullOrEmpty(record.ProcessPath) ? L10n.T("ui.at.unknownPath") : record.ProcessPath);
                 item.SubItems.Add(record.IsElevated ? L10n.T("common.yes") : L10n.T("common.no"));
+                item.SubItems.Add(string.IsNullOrEmpty(record.ProcessPath) ? L10n.T("ui.at.unknownPath") : record.ProcessPath);
                 if (record.IsElevated) item.ForeColor = UiTheme.Warning;
                 _list.Items.Add(item);
                 item.EnsureVisible();
                 _statusLabel.Text = L10n.F("ui.at.captured", _list.Items.Count);
             }
             catch (Exception) { }
+            UiTheme.RefitColumns(_list);
         }
 
         private void OnToggleClick(object sender, EventArgs e)
@@ -219,7 +219,7 @@ namespace HotkeyHound.Ui
                 catch (Exception ex) { error = ex.Message; }
                 try
                 {
-                    BeginInvoke(new Action(delegate () { OnStartFinished(engine, ok, error); }));
+                    UiPost.Post(this, delegate () { OnStartFinished(engine, ok, error); });
                 }
                 catch (Exception) { }
             });
@@ -306,8 +306,7 @@ namespace HotkeyHound.Ui
                             delegate (AutoProbeRecord record)
                             {
                                 if (IsDisposed) return;
-                                try { BeginInvoke(new Action<AutoProbeRecord>(AppendAutoRecord), record); }
-                                catch (Exception) { }
+                                UiPost.Post(this, delegate () { AppendAutoRecord(record); });
                             });
                     }
                 }
@@ -325,7 +324,7 @@ namespace HotkeyHound.Ui
                 }
                 try
                 {
-                    BeginInvoke(new Action(delegate () { OnAutoFinished(ok, error, result); }));
+                    UiPost.Post(this, delegate () { OnAutoFinished(ok, error, result); });
                 }
                 catch (Exception) { }
             });
@@ -357,6 +356,7 @@ namespace HotkeyHound.Ui
                     record.Combo == null ? "" : record.Combo.Display());
             }
             catch (Exception) { }
+            UiTheme.RefitColumns(_autoList);
         }
 
         private static string AutoProbeOutcomeName(AutoProbeOutcome outcome)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -200,6 +200,11 @@ namespace HotkeyHound
         /// </summary>
         private static string WriteCrashLog(Exception ex)
         {
+            return WriteCrashLog(ex, null);
+        }
+
+        private static string WriteCrashLog(Exception ex, string source)
+        {
             try
             {
                 string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -208,6 +213,7 @@ namespace HotkeyHound
                 Directory.CreateDirectory(dir);
                 string path = Path.Combine(dir, "error.log");
                 string body = "==== " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  v" + AppInfo.Version
+                              + (string.IsNullOrEmpty(source) ? "" : "  [" + source + "]")
                               + " ====\r\n" + (ex == null ? "(no exception object)" : ex.ToString()) + "\r\n\r\n";
                 File.AppendAllText(path, body, new UTF8Encoding(true));
                 return path;
@@ -216,6 +222,17 @@ namespace HotkeyHound
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// UI 线程回调里的失败（来自后台线程的投递）。只写日志、不弹框：
+        /// 这类失败通常是某条事件的处理出错，弹窗会把整台机器的工作节奏打断，而日志里
+        /// 带着来源方法名，足够定位。
+        /// </summary>
+        public static void ReportUiFailure(Exception ex, string source)
+        {
+            try { WriteCrashLog(ex, "ui:" + (source ?? "?")); }
+            catch (Exception) { }
         }
 
         private static void ReportUnhandled(Exception ex, bool fatal)

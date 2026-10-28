@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
@@ -111,12 +111,12 @@ namespace HotkeyHound.Ui
             _list.FullRowSelect = true;
             _list.GridLines = true;
             _list.HideSelection = false;
-            _list.Columns.Add(L10n.T("ui.at.col.time"), 80);
-            _list.Columns.Add(L10n.T("ui.col.combo"), 130);
-            _list.Columns.Add(L10n.T("ui.hk.col.verdict"), 120);
-            _list.Columns.Add(L10n.T("ui.col.evidence"), 220);
+            _list.Columns.Add(L10n.T("ui.at.col.time"), 70);
+            _list.Columns.Add(L10n.T("ui.col.combo"), 110);
+            _list.Columns.Add(L10n.T("ui.hk.col.verdict"), 110);
+            _list.Columns.Add(L10n.T("ui.col.evidence"), 180);
             _list.Columns.Add(L10n.T("ui.hk.col.note"), 200);
-            UiTheme.FillColumn(_list, 4, 180);
+            UiTheme.FillColumn(_list, 4, 240);
 
             // ------------------------------------------------------------ 右侧：对照排除（可滚动堆栈）
             var side = new Panel();
@@ -222,8 +222,7 @@ namespace HotkeyHound.Ui
             _captureHandler = delegate (string text)
             {
                 if (IsDisposed) return;
-                try { BeginInvoke(new Action<string>(ApplyCapturedCombo), text); }
-                catch (Exception) { }
+                UiPost.Post(this, delegate () { ApplyCapturedCombo(text); });
             };
             sniffer.KeySeen += _captureHandler;
 
@@ -354,7 +353,7 @@ namespace HotkeyHound.Ui
 
                 try
                 {
-                    BeginInvoke(new Action(delegate () { OnArmFinished(combo, wantB, okB, errB, okC, errC); }));
+                    UiPost.Post(this, delegate () { OnArmFinished(combo, wantB, okB, errB, okC, errC); });
                 }
                 catch (Exception) { }
             });
@@ -411,8 +410,7 @@ namespace HotkeyHound.Ui
             if (record == null) return;
             SessionRecords.AddHookRecord(record);
             if (IsDisposed) return;
-            try { BeginInvoke(new Action<HookCheckRecord>(AppendVerdict), record); }
-            catch (Exception) { }
+            UiPost.Post(this, delegate () { AppendVerdict(record); });
         }
 
         private void AppendVerdict(HookCheckRecord record)
@@ -439,6 +437,7 @@ namespace HotkeyHound.Ui
                 _statusLabel.Text = L10n.F("ui.hk.verdictPrefix", HookCheckRecord.VerdictName(record.Verdict));
             }
             catch (Exception) { }
+            UiTheme.RefitColumns(_list);
         }
 
         private void RefreshCandidates()

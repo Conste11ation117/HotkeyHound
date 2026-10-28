@@ -100,14 +100,14 @@ namespace HotkeyHound.Ui
             _events.FullRowSelect = true;
             _events.GridLines = false;
             _events.HideSelection = false;
-            _events.Columns.Add(L10n.T("ui.km.col.time"), 108);
-            _events.Columns.Add(L10n.T("ui.km.col.layer"), 110);
-            _events.Columns.Add(L10n.T("ui.km.col.key"), 130);
-            _events.Columns.Add(L10n.T("ui.km.col.scancode"), 110);
-            _events.Columns.Add(L10n.T("ui.km.col.flags"), 180);
+            _events.Columns.Add(L10n.T("ui.km.col.time"), 95);
+            _events.Columns.Add(L10n.T("ui.km.col.layer"), 90);
+            _events.Columns.Add(L10n.T("ui.km.col.key"), 100);
+            _events.Columns.Add(L10n.T("ui.km.col.scancode"), 95);
+            _events.Columns.Add(L10n.T("ui.km.col.flags"), 140);
             _events.Columns.Add(L10n.T("ui.km.col.desc"), 360);
             // 说明列吃满剩余宽度（2.0.0：修最大化时截断）。
-            UiTheme.FillColumn(_events, 5, 220);
+            UiTheme.FillColumn(_events, 5, 280);
 
             // 事件列表与详情区：详情区贴底，高度按「页面高度 - 顶部说明高度 - 事件列表最小高度」算，
             // 保证任何窗口尺寸下两边都看得见、不会互相压住。
@@ -288,7 +288,7 @@ namespace HotkeyHound.Ui
             _remap.Columns.Add(L10n.T("ui.km.remap.input"), 170);
             _remap.Columns.Add(L10n.T("ui.km.remap.output"), 170);
             _remap.Columns.Add(L10n.T("ui.km.col.scancode"), 120);
-            UiTheme.FillColumn(_remap, 2, 90);
+            UiTheme.FillColumn(_remap, 2, 120);
             remapBox.Controls.Add(_remap);
 
             var driverBox = new GroupBox();
@@ -369,8 +369,7 @@ namespace HotkeyHound.Ui
                 string error = null;
                 try { ok = _monitor.Start(); }
                 catch (Exception ex) { error = ex.Message; }
-                try { BeginInvoke(new Action(delegate () { OnStartFinished(ok, error); })); }
-                catch (Exception) { }
+                UiPost.Post(this, delegate () { OnStartFinished(ok, error); });
             });
             thread.IsBackground = true;
             thread.Name = "HotkeyHound-KeyMonitorStart";
@@ -395,6 +394,8 @@ namespace HotkeyHound.Ui
 
             // 窗口消息层必须在拥有窗口的 UI 线程上挂接。
             AttachWindowMessages();
+            // 启动成功后必须把按钮重新启用：它此刻已经变成「停止监视」，点不了就等于没法停。
+            _toggleButton.Enabled = true;
             _toggleButton.Text = L10n.T("ui.km.stop");
             _status.ForeColor = UiTheme.Success;
             _status.Text = L10n.F("ui.km.running",
@@ -459,22 +460,19 @@ namespace HotkeyHound.Ui
         private void OnKeyEvent(KeyLayerEvent record)
         {
             if (record == null || IsDisposed) return;
-            try { BeginInvoke(new Action<KeyLayerEvent>(AppendEvent), record); }
-            catch (Exception) { }
+            UiPost.Post(this, delegate () { AppendEvent(record); });
         }
 
         private void OnVerdictReady(KeyMonitorVerdictRecord record)
         {
             if (record == null || IsDisposed) return;
-            try { BeginInvoke(new Action<KeyMonitorVerdictRecord>(AppendVerdict), record); }
-            catch (Exception) { }
+            UiPost.Post(this, delegate () { AppendVerdict(record); });
         }
 
         private void OnModifiersChanged(ModifierSnapshot[] states)
         {
             if (IsDisposed) return;
-            try { BeginInvoke(new Action<ModifierSnapshot[]>(UpdateModifierLabel), states); }
-            catch (Exception) { }
+            UiPost.Post(this, delegate () { UpdateModifierLabel(states); });
         }
 
         private void AppendEvent(KeyLayerEvent record)
@@ -500,6 +498,7 @@ namespace HotkeyHound.Ui
                 item.EnsureVisible();
             }
             catch (Exception) { }
+            UiTheme.RefitColumns(_events);
         }
 
         private void AppendVerdict(KeyMonitorVerdictRecord record)

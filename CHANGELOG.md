@@ -4,6 +4,49 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] — 2026-10-29 “Hurricane”
+
+A bug-fix release for what daily use of 2.0.0 turned up: an undiagnosable crash dialog when a hook
+was installed, an unusable "stop monitoring" button, and remark columns that were cut off with a
+blank strip beside them.
+
+### Fixed: "Parameter count mismatch" dialog when installing a hook
+
+- Every background-to-UI post used `Control.BeginInvoke(Delegate, params object[])`, whose
+  marshalling path calls `Delegate.DynamicInvoke`. When the argument list did not line up with the
+  delegate signature, WinForms raised `TargetParameterCountException` inside the message pump —
+  no application frame in the stack, so the user saw a bare "Parameter count mismatch" dialog and
+  the error log could not name the culprit. All posts now go through one helper (`UiPost`) that
+  uses `MethodInvoker` (a direct call, no reflection) and, if the posted action itself fails,
+  records the source method name with the stack trace instead of showing a dialog.
+- Verified by reproduction: starting the key monitor and pressing a key used to write an entry to
+  `error.log` immediately; with the fix the same sequence writes nothing.
+
+### Fixed: "Stop monitoring" could not be clicked
+
+- The key-monitor toggle was disabled when starting and never re-enabled on success, so the button
+  already read *Stop monitoring (unload hook)* but was greyed out — there was no way to stop.
+  It is now re-enabled as soon as the monitor starts. Verified end to end: start → button becomes
+  *Stop monitoring* → click → status shows "Stopped monitoring; hook unloaded".
+
+### Fixed: the remark column was cut off, with a blank column beside it
+
+- The last column now takes the **larger** of "measured content width" and "remaining window
+  width": a long remark widens the column and the table scrolls horizontally, while short remarks
+  still fill the viewport. No more ellipsis-only column, and no blank strip on the right.
+- The viewport is measured from `ClientSize` (which already excludes the vertical scrollbar); the
+  old extra subtraction of the scrollbar width was exactly what produced that blank strip.
+- Remark is now the **last** column on every page: the hook-suspects page lists the config path
+  before it, and the attribution page lists the elevation flag before the process path.
+- Fixed columns are no longer compressed to make room, so their text stops turning into "已…" /
+  "实测…"; if the table does not fit, it scrolls.
+
+### Fixed: small cleanup
+
+- `%LOCALAPPDATA%\HotkeyHound\error.log` now records the source of a UI-callback failure
+  (`ui:<method>`), so a future report of this kind is diagnosable from the log alone.
+
+
 ## [2.0.0] — 2026-10-28 “Hurricane”
 
 The biggest interface change since 1.0 — a sidebar instead of tabs, a collapsible log drawer and

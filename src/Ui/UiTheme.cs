@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -335,8 +336,10 @@ namespace HotkeyHound.Ui
         }
 
         /// <summary>
-        /// 让 ListView 的指定列吃掉全部剩余宽度（并随窗口缩放实时重算）。
-        /// 修的就是「最大化时备注列还是 360px、内容截断、右边大片空白」这个问题。
+        /// 让 ListView 的最后一个「文字列」（备注 / 说明 / 路径）按内容显示完整：
+        /// 宽度取「内容实测宽度」和「窗口剩余宽度」中较大的那个——内容更长就撑开并出现横向滚动条，
+        /// 内容更短则吃满剩余宽度，右边不会多出一条空白。
+        /// minWidth 参数保留只为兼容旧调用点，不再作为下限（下限会把备注压成一条窄缝）。
         /// </summary>
         public static void FillColumn(ListView list, int index, int minWidth)
         {
@@ -356,7 +359,6 @@ namespace HotkeyHound.Ui
                         if (i == index || list.Columns[i].Width <= 0) continue;
                         list.Columns[i].Width = (int)Math.Round(list.Columns[i].Width * scale);
                     }
-                    minWidth = (int)Math.Round(minWidth * scale);
                 }
 
                 // 表头也必须完整：英文表头往往比中文长（Process running / Config state），
@@ -370,8 +372,7 @@ namespace HotkeyHound.Ui
             }
             catch (Exception) { }
 
-            // 记住「理想列宽」：窗口放不下时按比例收缩，而不是让固定列把列表撑出横向滚动条
-            // （2.0.0 的按表头测量列宽在默认窗口尺寸下就会溢出，说明列被挤到屏幕外）。
+            // 固定列的宽度一次定好就不再动：放不下就让整张表横向滚动，绝不压缩任何一列。
             int[] baseWidths = new int[list.Columns.Count];
             for (int i = 0; i < list.Columns.Count; i++) baseWidths[i] = list.Columns[i].Width;
 
@@ -382,8 +383,9 @@ namespace HotkeyHound.Ui
                     if (list.IsDisposed || list.Columns.Count <= index) return;
                     if (!list.IsHandleCreated || list.ClientSize.Width <= 0) return;
 
-                    int viewport = list.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 4;
-                    if (viewport <= 0) return;
+                    // ClientSize 已经扣掉纵向滚动条，直接用；再减一次就会在最后一列右边留白。
+                    int viewport = list.ClientSize.Width;
+                    if (viewport <= 8) return;
 
                     int used = 0;
                     for (int i = 0; i < list.Columns.Count; i++)
@@ -391,44 +393,18 @@ namespace HotkeyHound.Ui
                         if (i != index) used += baseWidths[i];
                     }
 
-                    if (used + minWidth > viewport)
-                    {
-                        // 装不下：固定列按比例收缩，但每列不低于「理想宽度的 62%」与 64px 中较大者，
-                        // 免得把「已占用」「实测注册」压成「已…」「实测…」。实在还放不下就让
-                        // 填充列守 minWidth，宁可横向滚动，也不把所有列一起压扁。
-                        int budget = Math.Max(0, viewport - minWidth);
-                        double k = used > 0 ? (double)budget / used : 0.0;
-                        if (k < 0) k = 0;
-                        used = 0;
-                        for (int i = 0; i < list.Columns.Count; i++)
-                        {
-                            if (i == index) continue;
-                            int floor = Math.Max(64, (int)Math.Round(baseWidths[i] * 0.62));
-                            int w = (int)Math.Round(baseWidths[i] * k);
-                            if (w < floor) w = floor;
-                            if (list.Columns[i].Width != w) list.Columns[i].Width = w;
-                            used += w;
-                        }
-                    }
-                    else
-                    {
-                        for (int i = 0; i < list.Columns.Count; i++)
-                        {
-                            if (i == index) continue;
-                            if (list.Columns[i].Width != baseWidths[i]) list.Columns[i].Width = baseWidths[i];
-                        }
-                    }
-
-                    // 填充列优先让出空间：先缩到 160px，只有连 160px 都不剩时才出横向滚动条。
-                    // 之前这里死守 minWidth，导致「其它列刚缩完、填充列又撑回 240」→ 必然横向滚动。
-                    int floorFill = Math.Min(minWidth, 160);
-                    int avail = viewport - used;
-                    list.Columns[index].Width = avail >= floorFill ? avail : floorFill;
+                    int content = ContentWidth(list, index);
+                    int target = Math.Max(content, viewport - used);
+                    if (target < 60) target = 60;
+                    if (list.Columns[index].Width != target) list.Columns[index].Width = target;
                 }
                 catch (Exception) { }
             };
+            Fitters[list] = fit;
             list.Resize += fit;
             list.HandleCreated += fit;
+            // 滚动条出现/消失、页面切换都会改变 ClientSize；只在 Resize 上算会留下陈旧的列宽。
+            list.ClientSizeChanged += fit;
             // 页面是「按需显示」的：隐藏期间完成的布局会让列宽按偏窄的宽度算一次，
             // 之后显示时既没有 Resize 也没有 HandleCreated，列就会一直停留在被压扁的状态。
             list.VisibleChanged += fit;
@@ -437,9 +413,47 @@ namespace HotkeyHound.Ui
             try
             {
                 // 布局完成后再算一次（构造期控件还没有最终宽度）。
-                list.BeginInvoke(new Action(delegate () { fit(null, null); }));
+                UiPost.Post(list, delegate () { fit(null, null); });
             }
             catch (Exception) { }
+        }
+
+        /// <summary>
+        /// 量出某一列内容实际需要多宽（取最长的几行）。行数多时只抽样前 400 行，
+        /// 避免几千行表格在每次窗口缩放时都全量测量。
+        /// </summary>
+        private static int ContentWidth(ListView list, int index)
+        {
+            int widest = 0;
+            try
+            {
+                int count = Math.Min(list.Items.Count, 400);
+                for (int i = 0; i < count; i++)
+                {
+                    ListViewItem item = list.Items[i];
+                    string text = index < item.SubItems.Count ? item.SubItems[index].Text : item.Text;
+                    if (string.IsNullOrEmpty(text)) continue;
+                    int w = TextRenderer.MeasureText(text, list.Font).Width + 20;
+                    if (w > widest) widest = w;
+                }
+            }
+            catch (Exception) { }
+            return widest;
+        }
+
+        /// <summary>每个列表记住自己的列宽计算器：行内容变化后由 RefitColumns 触发重算。</summary>
+        private static readonly Dictionary<ListView, EventHandler> Fitters = new Dictionary<ListView, EventHandler>();
+
+        /// <summary>行内容变化后调用一次，让最后的文字列按新内容重新测量宽度（备注不再被截）。</summary>
+        public static void RefitColumns(ListView list)
+        {
+            if (list == null || list.IsDisposed) return;
+            EventHandler fit;
+            if (Fitters.TryGetValue(list, out fit))
+            {
+                try { fit(null, null); }
+                catch (Exception) { }
+            }
         }
 
         /// <summary>ListView/ListBox 双缓冲：几千行滚动刷新不再闪烁（反射打开受保护属性）。</summary>

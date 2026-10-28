@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -167,13 +167,13 @@ namespace HotkeyHound.Ui
             _list.FullRowSelect = true;
             _list.GridLines = true;
             _list.HideSelection = false;
-            _list.Columns.Add(L10n.T("ui.col.combo"), 170);
-            _list.Columns.Add(L10n.T("ui.col.state"), 80);
-            _list.Columns.Add(L10n.T("ui.col.owner"), 260);
-            _list.Columns.Add(L10n.T("ui.col.evidence"), 100);
+            _list.Columns.Add(L10n.T("ui.col.combo"), 140);
+            _list.Columns.Add(L10n.T("ui.col.state"), 70);
+            _list.Columns.Add(L10n.T("ui.col.owner"), 220);
+            _list.Columns.Add(L10n.T("ui.col.evidence"), 80);
             _list.Columns.Add(L10n.T("ui.col.note"), 260);
             // 备注列吃满剩余宽度：最大化时不再截断、右边不再留白。
-            UiTheme.FillColumn(_list, 4, 240);
+            UiTheme.FillColumn(_list, 4, 320);
             _list.DoubleClick += OnListDoubleClick;
 
             Controls.Add(_list);
@@ -198,13 +198,13 @@ namespace HotkeyHound.Ui
                     if (IsDisposed) return;
                     try
                     {
-                        BeginInvoke(new Action(delegate ()
+                        UiPost.Post(this, delegate ()
                         {
                             if (total <= 0) return;
                             _progress.Maximum = total;
                             _progress.Value = Math.Min(done, total);
                             _progressText.Text = L10n.F("ui.ov.progress", done, total);
-                        }));
+                        });
                     }
                     catch (Exception) { }
                 },
@@ -259,6 +259,7 @@ namespace HotkeyHound.Ui
             {
                 _list.EndUpdate();
             }
+            UiTheme.RefitColumns(_list);
         }
 
         private void OnListDoubleClick(object sender, EventArgs e)

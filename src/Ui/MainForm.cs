@@ -537,8 +537,7 @@ namespace HotkeyHound.Ui
             if (IsDisposed) return;
             if (InvokeRequired)
             {
-                try { BeginInvoke(new Action<string>(OnLogLine), line); }
-                catch (Exception) { }
+                UiPost.Post(this, delegate () { OnLogLine(line); });
                 return;
             }
             try
@@ -553,8 +552,7 @@ namespace HotkeyHound.Ui
             if (IsDisposed) return;
             if (InvokeRequired)
             {
-                try { BeginInvoke(new Action<string>(SetStatus), text); }
-                catch (Exception) { }
+                UiPost.Post(this, delegate () { SetStatus(text); });
                 return;
             }
             _statusLabel.Text = text;
@@ -599,7 +597,7 @@ namespace HotkeyHound.Ui
 
                 try
                 {
-                    BeginInvoke(new Action(delegate ()
+                    UiPost.Post(this, delegate ()
                     {
                         _scanning = false;
                         if (snapshot != null) _snapshot = snapshot;
@@ -607,7 +605,7 @@ namespace HotkeyHound.Ui
                         Action handler = SnapshotChanged;
                         if (handler != null && snapshot != null) handler();
                         if (finished != null) finished(snapshot, error);
-                    }));
+                    });
                 }
                 catch (Exception) { }
             });

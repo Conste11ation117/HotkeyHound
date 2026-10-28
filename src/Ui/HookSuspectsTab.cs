@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -78,16 +78,16 @@ namespace HotkeyHound.Ui
             _list.FullRowSelect = true;
             _list.GridLines = true;
             _list.HideSelection = false;
-            _list.Columns.Add(L10n.T("ui.col.combo"), 130);
-            _list.Columns.Add(L10n.T("ui.hs.col.software"), 130);
-            _list.Columns.Add(L10n.T("ui.hs.col.module"), 140);
-            _list.Columns.Add(L10n.T("ui.col.evidence"), 110);
-            _list.Columns.Add(L10n.T("ui.hs.col.process"), 100);
-            _list.Columns.Add(L10n.T("ui.hs.col.config"), 100);
+            _list.Columns.Add(L10n.T("ui.col.combo"), 110);
+            _list.Columns.Add(L10n.T("ui.hs.col.software"), 110);
+            _list.Columns.Add(L10n.T("ui.hs.col.module"), 120);
+            _list.Columns.Add(L10n.T("ui.col.evidence"), 90);
+            _list.Columns.Add(L10n.T("ui.hs.col.process"), 80);
+            _list.Columns.Add(L10n.T("ui.hs.col.config"), 80);
+            _list.Columns.Add(L10n.T("ui.hs.col.source"), 160);
             _list.Columns.Add(L10n.T("ui.col.note"), 220);
-            _list.Columns.Add(L10n.T("ui.hs.col.source"), 200);
             // 来源路径列吃满剩余宽度：长路径不再截断，最大化不再留白。
-            UiTheme.FillColumn(_list, 7, 200);
+            UiTheme.FillColumn(_list, 7, 260);
             _list.DoubleClick += delegate (object s, EventArgs e) { OpenSelectedConfig(); };
 
             Controls.Add(_list);
@@ -135,8 +135,8 @@ namespace HotkeyHound.Ui
                     item.SubItems.Add(HookCatalog.EvidenceName(r.Evidence));
                     item.SubItems.Add(r.ProcessRunning ? L10n.T("ui.hs.processYes") : L10n.T("ui.hs.processNo"));
                     item.SubItems.Add(HookCatalog.ConfigStateName(r.ConfigState));
-                    item.SubItems.Add(r.Note);
                     item.SubItems.Add(string.IsNullOrEmpty(r.SourcePath) ? L10n.T("common.none") : r.SourcePath);
+                    item.SubItems.Add(r.Note);
                     item.Tag = r;
                     switch (r.Evidence)
                     {
@@ -154,6 +154,7 @@ namespace HotkeyHound.Ui
             {
                 _list.EndUpdate();
             }
+            UiTheme.RefitColumns(_list);
         }
 
         private void OpenSelectedConfig()

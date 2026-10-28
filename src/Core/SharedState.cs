@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Principal;
@@ -10,7 +10,7 @@ namespace HotkeyHound.Core
     public static class AppInfo
     {
         public const string Title = "HotkeyHound";
-        public const string Version = "2.0.0";
+        public const string Version = "2.1.0";
         /// <summary>版本代号（写进发布说明与状态栏，不参与比较）。</summary>
         public const string Codename = "Hurricane";
 
