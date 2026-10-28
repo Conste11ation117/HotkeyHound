@@ -34,6 +34,7 @@ namespace HotkeyHound.Ui
         private TableLayoutPanel _verdictStack;
         private readonly ListView _events;
         private ListView _remap;
+        private Label _remapEmpty;
         private ListBox _drivers;
 
         private bool _busy;
@@ -266,10 +267,14 @@ namespace HotkeyHound.Ui
                 try
                 {
                     if (split.Height < 150) return;
-                    int wanted = split.Height / 2;
-                    if (wanted < 64) wanted = 64;
-                    if (wanted > 110) wanted = 110;
+                    // 两个只读框都要留得住「标题 + 至少两行」：原先各 64~110px，
+                    // 高 DPI 下只剩一行表头，看起来像坏掉的空表格。
+                    int wanted = (int)(split.Height * 0.45);
+                    if (wanted < 96) wanted = 96;
+                    if (wanted > 170) wanted = 170;
                     split.SplitterDistance = wanted;
+                    split.Panel1MinSize = 90;
+                    split.Panel2MinSize = 90;
                 }
                 catch (Exception) { }
             };
@@ -289,6 +294,12 @@ namespace HotkeyHound.Ui
             _remap.Columns.Add(L10n.T("ui.km.remap.output"), 170);
             _remap.Columns.Add(L10n.T("ui.km.col.scancode"), 120);
             UiTheme.FillColumn(_remap, 2, 120);
+            _remapEmpty = new Label();
+            _remapEmpty.Dock = DockStyle.Fill;
+            _remapEmpty.TextAlign = ContentAlignment.MiddleLeft;
+            _remapEmpty.ForeColor = UiTheme.Muted;
+            _remapEmpty.Visible = false;
+            remapBox.Controls.Add(_remapEmpty);
             remapBox.Controls.Add(_remap);
 
             var driverBox = new GroupBox();
@@ -627,9 +638,19 @@ namespace HotkeyHound.Ui
                     }
                     if (map.Count == 0)
                     {
-                        var empty = new ListViewItem(L10n.T("ui.km.remap.empty"));
-                        empty.ForeColor = UiTheme.Muted;
-                        _remap.Items.Add(empty);
+                        // 没有映射时不要显示一张只剩表头 + 横向滚动条的空表格：
+                        // 直接换成一行说明，并让列表隐藏。
+                        if (_remapEmpty != null)
+                        {
+                            _remapEmpty.Text = L10n.T("ui.km.remap.empty");
+                            _remapEmpty.Visible = true;
+                        }
+                        _remap.Visible = false;
+                    }
+                    else
+                    {
+                        if (_remapEmpty != null) _remapEmpty.Visible = false;
+                        _remap.Visible = true;
                     }
                 }
                 finally { _remap.EndUpdate(); }
