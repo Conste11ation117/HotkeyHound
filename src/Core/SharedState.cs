@@ -10,9 +10,9 @@ namespace HotkeyHound.Core
     public static class AppInfo
     {
         public const string Title = "HotkeyHound";
-        public const string Version = "2.1.1";
+        public const string Version = "3.0.0";
         /// <summary>版本代号（写进发布说明与状态栏，不参与比较）。</summary>
-        public const string Codename = "Hurricane";
+        public const string Codename = "Tournament";
 
         /// <summary>版本说明（随当前语言变化）。</summary>
         public static string VersionNote { get { return L10n.T("app.versionNote"); } }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
@@ -128,6 +128,13 @@ namespace HotkeyHound.Ui
             themeRow.Controls.Add(themeLabel);
             themeRow.Controls.Add(_themeBox);
 
+            // 作者署名：最后一页固定展示，跟着版本走（不写进可执行文件的字符串表外部）。
+            var authorRow = UiTheme.NewFlowRow();
+            var authorLabel = UiTheme.StackLabel(L10n.T("ui.rt.author"), UiTheme.Muted);
+            authorLabel.AutoSize = true;
+            authorLabel.Dock = DockStyle.Top;
+            authorRow.Controls.Add(authorLabel);
+
             _releaseNote = UiTheme.StackLabel(
                 L10n.F("ui.rt.release", AppInfo.Title, AppInfo.Version, AppInfo.VersionNote, AppInfo.Framework,
                        AppInfo.MachineName, AppInfo.UserName,
@@ -142,6 +149,7 @@ namespace HotkeyHound.Ui
             UiTheme.StackAdd(stack, _reportInfo);
             UiTheme.StackAdd(stack, langRow);
             UiTheme.StackAdd(stack, themeRow);
+            UiTheme.StackAdd(stack, authorRow);
             UiTheme.StackAdd(stack, _releaseNote);
             UiTheme.StackAdd(stack, _limits);
 

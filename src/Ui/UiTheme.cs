@@ -336,67 +336,50 @@ namespace HotkeyHound.Ui
         }
 
         /// <summary>
-        /// 让 ListView 的最后一个「文字列」（备注 / 说明 / 路径）按内容显示完整：
-        /// 宽度取「内容实测宽度」和「窗口剩余宽度」中较大的那个——内容更长就撑开并出现横向滚动条，
-        /// 内容更短则吃满剩余宽度，右边不会多出一条空白。
-        /// minWidth 参数保留只为兼容旧调用点，不再作为下限（下限会把备注压成一条窄缝）。
+        /// 让 ListView 的每一列都按「内容实际宽度」自适应：表头与最长的单元格都完整显示，
+        /// 整张表放不下就出现横向滚动条（滚到右边就能把备注看完），放得下就让最后一列
+        /// 吃满剩余宽度——右边不会多出一条空白。
+        /// minWidth 参数只为兼容旧调用点保留，不再作为下限（下限会把备注压成一条窄缝）。
         /// </summary>
         public static void FillColumn(ListView list, int index, int minWidth)
         {
             if (list == null || index < 0) return;
 
-            // ListView 的列宽不会跟着 DPI 自动缩放：在 150%/200% 下原来 80px 的「状态」列
-            // 只够显示「已占用…」。这里按当前设备 DPI 等比放大所有固定列，宁可横向滚动，
-            // 也不要每个单元格都截字。调用点每个列表只调用一次，不会反复放大。
-            try
+            // 表头宽度：英文表头往往比中文长（Process running / Config state），
+            // 只按数据算会出现连表头都读不全的情况。
+            int columns = list.Columns.Count;
+            int[] headerWidths = new int[columns];
+            for (int i = 0; i < columns; i++)
             {
-                float scale = 1F;
-                using (Graphics g = list.CreateGraphics()) scale = g.DpiX / 96F;
-                if (scale > 1.01F)
-                {
-                    for (int i = 0; i < list.Columns.Count; i++)
-                    {
-                        if (i == index || list.Columns[i].Width <= 0) continue;
-                        list.Columns[i].Width = (int)Math.Round(list.Columns[i].Width * scale);
-                    }
-                }
-
-                // 表头也必须完整：英文表头往往比中文长（Process running / Config state），
-                // 单靠固定像素会出现「Process r…」这种连表头都读不全的情况。
-                for (int i = 0; i < list.Columns.Count; i++)
-                {
-                    ColumnHeader column = list.Columns[i];
-                    int wanted = TextRenderer.MeasureText(column.Text, list.Font).Width + 28;
-                    if (column.Width < wanted) column.Width = wanted;
-                }
+                headerWidths[i] = TextRenderer.MeasureText(list.Columns[i].Text, list.Font).Width + 28;
             }
-            catch (Exception) { }
-
-            // 固定列的宽度一次定好就不再动：放不下就让整张表横向滚动，绝不压缩任何一列。
-            int[] baseWidths = new int[list.Columns.Count];
-            for (int i = 0; i < list.Columns.Count; i++) baseWidths[i] = list.Columns[i].Width;
 
             EventHandler fit = delegate (object s, EventArgs e)
             {
                 try
                 {
                     if (list.IsDisposed || list.Columns.Count <= index) return;
-                    if (!list.IsHandleCreated || list.ClientSize.Width <= 0) return;
+                    if (!list.IsHandleCreated || list.ClientSize.Width <= 8) return;
 
-                    // ClientSize 已经扣掉纵向滚动条，直接用；再减一次就会在最后一列右边留白。
-                    int viewport = list.ClientSize.Width;
-                    if (viewport <= 8) return;
+                    int[] need = MeasureColumns(list, headerWidths);
+                    if (need == null) return;
 
                     int used = 0;
-                    for (int i = 0; i < list.Columns.Count; i++)
+                    for (int i = 0; i < need.Length; i++)
                     {
-                        if (i != index) used += baseWidths[i];
+                        if (i != index) used += need[i];
                     }
 
-                    int content = ContentWidth(list, index);
-                    int target = Math.Max(content, viewport - used);
-                    if (target < 60) target = 60;
-                    if (list.Columns[index].Width != target) list.Columns[index].Width = target;
+                    // ClientSize 已经扣掉了纵向滚动条，直接用；再减一次就会在最后一列右边留白。
+                    int viewport = list.ClientSize.Width;
+                    int last = Math.Max(need[index], viewport - used);
+                    if (last < 60) last = 60;
+
+                    for (int i = 0; i < need.Length && i < list.Columns.Count; i++)
+                    {
+                        int w = i == index ? last : need[i];
+                        if (list.Columns[i].Width != w) list.Columns[i].Width = w;
+                    }
                 }
                 catch (Exception) { }
             };
@@ -418,28 +401,52 @@ namespace HotkeyHound.Ui
             catch (Exception) { }
         }
 
-        /// <summary>
-        /// 量出某一列内容实际需要多宽（取最长的几行）。行数多时只抽样前 400 行，
-        /// 避免几千行表格在每次窗口缩放时都全量测量。
-        /// </summary>
-        private static int ContentWidth(ListView list, int index)
+        private sealed class ColumnFit
         {
-            int widest = 0;
+            public int Count = -1;
+            public int[] Needs;
+        }
+
+        /// <summary>每个列表上次测量的结果：行数没变就直接复用，避免每次缩放都全量测量。</summary>
+        private static readonly Dictionary<ListView, ColumnFit> ColumnFits = new Dictionary<ListView, ColumnFit>();
+
+        /// <summary>量出每列需要的宽度（表头与最长的单元格取大者）。行多时只抽样前 300 行。</summary>
+        private static int[] MeasureColumns(ListView list, int[] headerWidths)
+        {
+            ColumnFit cache;
+            if (ColumnFits.TryGetValue(list, out cache) && cache.Count == list.Items.Count && cache.Needs != null)
+            {
+                return cache.Needs;
+            }
+
+            int columns = Math.Min(headerWidths.Length, list.Columns.Count);
+            int[] need = new int[columns];
+            for (int i = 0; i < columns; i++) need[i] = headerWidths[i];
+
             try
             {
-                int count = Math.Min(list.Items.Count, 400);
-                for (int i = 0; i < count; i++)
+                int rows = Math.Min(list.Items.Count, 1000);
+                for (int r = 0; r < rows; r++)
                 {
-                    ListViewItem item = list.Items[i];
-                    string text = index < item.SubItems.Count ? item.SubItems[index].Text : item.Text;
-                    if (string.IsNullOrEmpty(text)) continue;
-                    int w = TextRenderer.MeasureText(text, list.Font).Width + 20;
-                    if (w > widest) widest = w;
+                    ListViewItem item = list.Items[r];
+                    for (int c = 0; c < columns; c++)
+                    {
+                        string text = c < item.SubItems.Count ? item.SubItems[c].Text : null;
+                        if (string.IsNullOrEmpty(text)) continue;
+                        int w = TextRenderer.MeasureText(text, list.Font).Width + 22;
+                        if (w > need[c]) need[c] = w;
+                    }
                 }
             }
             catch (Exception) { }
-            return widest;
+
+            // 单列上限：避免一条超长路径把整张表撑到几千像素。
+            for (int i = 0; i < columns; i++) if (need[i] > 1200) need[i] = 1200;
+
+            ColumnFits[list] = new ColumnFit { Count = list.Items.Count, Needs = need };
+            return need;
         }
+
 
         /// <summary>每个列表记住自己的列宽计算器：行内容变化后由 RefitColumns 触发重算。</summary>
         private static readonly Dictionary<ListView, EventHandler> Fitters = new Dictionary<ListView, EventHandler>();

@@ -1127,6 +1127,8 @@ namespace HotkeyHound.Core
 
             // Report & about
             A("ui.rt.heading", "报告与关于", "Report & about");
+            A("ui.rt.author", "作者：Conste11ation117　·　github.com/Conste11ation117",
+              "Author: Conste11ation117  -  github.com/Conste11ation117");
             A("ui.rt.pathLabel", "报告路径：", "Report path: ");
             A("ui.rt.open", "打开报告", "Open report");
             A("ui.rt.generate", "生成报告", "Generate report");

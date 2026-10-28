@@ -4,6 +4,49 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] — 2026-10-29 “Tournament”
+
+Cuts a new major line after the 2.0.0 interface rewrite. Everything below is a fix for problems hit
+in daily use — one undiagnosable crash dialog, one unreachable stop button, one empty read-only box,
+and tables that cut their own text — plus the author line on the about page.
+
+### Fixed: every table column now fits its content
+
+- Column widths are measured from the header **and the longest cell in that column**, and applied to
+  **every** column — not just the last one. Nothing is ellipsised while the window has room; when the
+  table is wider than the window it scrolls horizontally instead of squeezing columns into "已…" /
+  "实测…".
+- The last column additionally fills any remaining width, so short tables leave no blank strip on the
+  right.
+- A single column is capped at 1200 px so one very long path cannot stretch the table off the screen;
+  measurements are cached per row count, so resizing stays responsive.
+
+### Fixed: "Parameter count mismatch" dialog when installing a hook
+
+- Background-to-UI posts used `Control.BeginInvoke(Delegate, params object[])`, whose marshalling path
+  calls `Delegate.DynamicInvoke`. A mismatch between the delegate signature and the argument list
+  raised `TargetParameterCountException` inside the message pump with no application frame — the user
+  saw a bare dialog and the log could not name the culprit. All posts now go through one helper
+  (`UiPost`) that uses `MethodInvoker` (a direct call, no reflection); a failing callback is logged
+  with its source method instead of opening a dialog.
+
+### Fixed: "Stop monitoring" could not be clicked
+
+- The key-monitor toggle was disabled when starting and never re-enabled on success, so it read
+  "Stop monitoring (unload hook)" while being greyed out. It is re-enabled as soon as the monitor
+  starts; verified start → stop → "Stopped monitoring; hook unloaded".
+
+### Fixed: the Scancode Map box looked broken when empty
+
+- With no remaps configured, the hint text was inserted as a data row and, at high DPI, the box only
+  received 64–110 px — on screen that is a bare header plus a horizontal scrollbar. The list is now
+  hidden in that case and replaced by a single explanatory line; both read-only boxes get a 96 px
+  minimum height.
+
+### Added: author line on the last page
+
+- The Report & about page shows the author: `Conste11ation117 · github.com/Conste11ation117`.
+
 ## [2.1.1] — 2026-10-29 “Hurricane”
 
 ### Fixed: an empty "Scancode Map remaps" box that looked broken
