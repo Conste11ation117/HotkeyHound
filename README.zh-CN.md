@@ -184,8 +184,8 @@ Secure Boot / HVCI 的 Windows 上会被拦，而且**依然看不到钩子**。
   <img src="docs/screenshot-hooksuspects.png" width="46%" alt="钩子嫌疑清单，带证据等级与配置路径" />
   <img src="docs/screenshot-hookcheck.png" width="46%" alt="钩子检测：布防、按键、读结论" />
   <img src="docs/screenshot-attribution.png" width="46%" alt="按键归属：是哪个进程收到了这个热键" />
-<img src="docs/screenshot-report.png" width="46%" alt="报告：生成并打开 HTML 报告" />
-<img src="docs/screenshot-about.png" width="46%" alt="关于：版本、作者、许可证与已知限制" />
+  <img src="docs/screenshot-report.png" width="46%" alt="报告：生成并打开 HTML 报告" />
+  <img src="docs/screenshot-about.png" width="46%" alt="关于：版本、作者、许可证与已知限制" />
 </p>
 
 ## 文档

@@ -160,8 +160,8 @@ Older options exist too — NirSoft's HotKeysList (lists registrations, names no
   <img src="docs/screenshot-hooksuspects.png" width="46%" alt="Hook suspects with evidence levels and config paths" />
   <img src="docs/screenshot-hookcheck.png" width="46%" alt="Hook detection: arm, press the key, read the verdict" />
   <img src="docs/screenshot-attribution.png" width="46%" alt="Key attribution: which process received the hotkey" />
-<img src="docs/screenshot-report.png" width="46%" alt="Report: generate and open the HTML report" />
-<img src="docs/screenshot-about.png" width="46%" alt="About: version, author, licence and known limits" />
+  <img src="docs/screenshot-report.png" width="46%" alt="Report: generate and open the HTML report" />
+  <img src="docs/screenshot-about.png" width="46%" alt="About: version, author, licence and known limits" />
 </p>
 
 ## Documentation
