@@ -7,18 +7,18 @@
 <title>HotkeyHound Help</title>
 <style>
   body { font-family: 'Segoe UI','Microsoft YaHei UI',sans-serif; margin: 0; padding: 18px 24px 48px;
-         color: #1b1d21; background: #fff; line-height: 1.7; font-size: 14px; }
-  h1 { font-size: 22px; margin: 6px 0 2px; }
-  h2 { font-size: 17px; margin: 26px 0 8px; padding-bottom: 5px; border-bottom: 2px solid #e2e5ec; }
-  h3 { font-size: 15px; margin: 16px 0 4px; color: #24406b; }
-  p, li { font-size: 14px; }
-  code { background: #eef1f6; padding: 1px 5px; border-radius: 4px; font-family: Consolas, monospace; }
-  pre { background: #1f2430; color: #d8dee9; padding: 10px 12px; border-radius: 6px; overflow: auto; }
-  table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
-  th, td { border: 1px solid #dfe3ea; padding: 5px 8px; text-align: left; vertical-align: top; }
+         color: #1b1d21; background: #fff; line-height: 1.85; font-size: 17px; }
+  h1 { font-size: 30px; margin: 6px 0 6px; }
+  h2 { font-size: 22px; margin: 26px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #e2e5ec; }
+  h3 { font-size: 19px; margin: 18px 0 6px; color: #24406b; }
+  p, li { font-size: 17px; }
+  code { background: #eef1f6; padding: 1px 6px; border-radius: 4px; font-family: Consolas, monospace; font-size: 16px; }
+  pre { background: #1f2430; color: #d8dee9; padding: 12px 14px; border-radius: 6px; overflow: auto; font-size: 16px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 16px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 10px; text-align: left; vertical-align: top; }
   th { background: #eef1f6; }
-  .note { background: #fff6e5; border: 1px solid #f0d69a; border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
-  .sub { color: #5a6070; font-size: 13px; }
+  .note { background: #fff6e5; border: 1px solid #f0d69a; border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+  .sub { color: #5a6070; font-size: 16px; }
   ul, ol { margin: 6px 0 6px 22px; padding: 0; }
 </style>
 </head>
@@ -68,8 +68,8 @@ missing it honestly reports Inconclusive instead of guessing:</p>
 <table>
   <tr><th>Verdict</th><th>Meaning</th></tr>
   <tr><td>Delivered normally</td><td>The key reached the system and a clear attribution report arrived</td></tr>
-  <tr><td>Likely intercepted</td><td>The key reached the system and engine B was listening, but the owner did not get the command</td></tr>
-  <tr><td>Swallowed upstream</td><td>This program's hook never saw the key &mdash; an upstream hook swallowed it</td></tr>
+  <tr><td>Likely intercepted by a hook</td><td>The key reached the system and engine B was listening, but the owner did not get the command</td></tr>
+  <tr><td>Swallowed by an upstream hook</td><td>This program's hook never saw the key &mdash; an upstream hook swallowed it</td></tr>
   <tr><td>Not a global hotkey</td><td>Seen, but engine A does not list it &mdash; only the current window handles it</td></tr>
   <tr><td>Inconclusive (prerequisite missing)</td><td>Engine B was not listening, or engine A has not scanned &mdash; not enough evidence, no claim is made</td></tr>
 </table>

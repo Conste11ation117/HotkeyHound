@@ -434,10 +434,10 @@ namespace HotkeyHound.Ui
                 }
                 _list.Items.Add(item);
                 item.EnsureVisible();
+                UiTheme.TrackRow(_list, item);
                 _statusLabel.Text = L10n.F("ui.hk.verdictPrefix", HookCheckRecord.VerdictName(record.Verdict));
             }
             catch (Exception) { }
-            UiTheme.RefitColumns(_list);
         }
 
         private void RefreshCandidates()

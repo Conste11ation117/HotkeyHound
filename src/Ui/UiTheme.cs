@@ -359,10 +359,14 @@ namespace HotkeyHound.Ui
                 try
                 {
                     if (list.IsDisposed || list.Columns.Count <= index) return;
-                    if (!list.IsHandleCreated || list.ClientSize.Width <= 8) return;
 
+                    // 测量必须在句柄检查之前：配置真相表/钩子嫌疑是在页面隐藏、句柄未建时重建的，
+                    // 那一刻托管 Items 还是完整的；等页面显示后再来量，索引器已经和原生列表脱节、
+                    // 逐项返回 null，列宽就永远停在表头宽度。
                     int[] need = MeasureColumns(list, headerWidths);
                     if (need == null) return;
+
+                    if (!list.IsHandleCreated || list.ClientSize.Width <= 8) return;
 
                     int used = 0;
                     for (int i = 0; i < need.Length; i++)
@@ -410,7 +414,59 @@ namespace HotkeyHound.Ui
         /// <summary>每个列表上次测量的结果：行数没变就直接复用，避免每次缩放都全量测量。</summary>
         private static readonly Dictionary<ListView, ColumnFit> ColumnFits = new Dictionary<ListView, ColumnFit>();
 
-        /// <summary>量出每列需要的宽度（表头与最长的单元格取大者）。行多时只抽样前 300 行。</summary>
+        /// <summary>量出表头需要的宽度：数据比表头窄时，至少要把表头显示完整。</summary>
+        private static int[] HeaderWidths(ListView list)
+        {
+            int columns = list.Columns.Count;
+            int[] widths = new int[columns];
+            for (int i = 0; i < columns; i++)
+            {
+                widths[i] = TextRenderer.MeasureText(list.Columns[i].Text, list.Font).Width + 28;
+            }
+            return widths;
+        }
+
+        /// <summary>
+        /// 新增一行后只量这一行：避免每次追加都全表重测（行多时会卡），
+        /// 同时保证后面出现的长文本也能把列撑开。
+        /// </summary>
+        public static void TrackRow(ListView list, ListViewItem item)
+        {
+            if (list == null || item == null || list.Columns.Count == 0) return;
+            try
+            {
+                ColumnFit cache;
+                bool hasCache = ColumnFits.TryGetValue(list, out cache);
+                // 缓存必须是「追加这一行之前」的测量结果，否则说明中间有过清空/重建，只能全量重测。
+                if (!hasCache || cache == null || cache.Needs == null
+                    || cache.Needs.Length != list.Columns.Count
+                    || (cache.Count != list.Items.Count - 1 && cache.Count != list.Items.Count))
+                {
+                    RefitColumns(list);
+                    return;
+                }
+
+                int[] need = cache.Needs;
+                int columns = Math.Min(list.Columns.Count, item.SubItems.Count);
+                for (int c = 0; c < columns; c++)
+                {
+                    ListViewItem.ListViewSubItem si = item.SubItems[c];
+                    string text = si == null ? null : si.Text;
+                    if (string.IsNullOrEmpty(text)) continue;
+                    int w = TextRenderer.MeasureText(text, list.Font).Width + 28;
+                    if (w > need[c]) need[c] = Math.Min(w, 4000);
+                }
+                cache.Count = list.Items.Count;
+                cache.Needs = need;
+                RefitColumns(list);
+            }
+            catch (Exception) { }
+        }
+
+        /// <summary>
+        /// 量出每列需要的宽度（表头与最长的单元格取大者）。行数过多时抽样前 2000 行。
+        /// 必须在页面隐藏、托管集合还完好的时机被调用（见 FillColumn 里 fit 的顺序）。
+        /// </summary>
         private static int[] MeasureColumns(ListView list, int[] headerWidths)
         {
             ColumnFit cache;
@@ -422,26 +478,29 @@ namespace HotkeyHound.Ui
             int columns = Math.Min(headerWidths.Length, list.Columns.Count);
             int[] need = new int[columns];
             for (int i = 0; i < columns; i++) need[i] = headerWidths[i];
+            int rows = Math.Min(list.Items.Count, 2000);
 
             try
             {
-                int rows = Math.Min(list.Items.Count, 1000);
                 for (int r = 0; r < rows; r++)
                 {
                     ListViewItem item = list.Items[r];
+                    if (item == null || item.SubItems == null) continue;
+                    int subCount = item.SubItems.Count;
                     for (int c = 0; c < columns; c++)
                     {
-                        string text = c < item.SubItems.Count ? item.SubItems[c].Text : null;
+                        ListViewItem.ListViewSubItem si = c < subCount ? item.SubItems[c] : null;
+                        string text = si == null ? null : si.Text;
                         if (string.IsNullOrEmpty(text)) continue;
-                        int w = TextRenderer.MeasureText(text, list.Font).Width + 22;
+                        int w = TextRenderer.MeasureText(text, list.Font).Width + 28;
                         if (w > need[c]) need[c] = w;
                     }
                 }
             }
             catch (Exception) { }
 
-            // 单列上限：避免一条超长路径把整张表撑到几千像素。
-            for (int i = 0; i < columns; i++) if (need[i] > 1200) need[i] = 1200;
+            // 只防极端异常值；允许横向滚动，所以不设 1200 那种小上限。
+            for (int i = 0; i < columns; i++) if (need[i] > 4000) need[i] = 4000;
 
             ColumnFits[list] = new ColumnFit { Count = list.Items.Count, Needs = need };
             return need;
@@ -461,6 +520,31 @@ namespace HotkeyHound.Ui
                 try { fit(null, null); }
                 catch (Exception) { }
             }
+        }
+
+        /// <summary>
+        /// 重算所有登记过的列表。页面是隐藏时建的：那时 ListView 没有句柄/尺寸，
+        /// 按内容算列宽全部提前返回；等用户切到该页，子控件的 Visible 并没有变化，
+        /// Resize/VisibleChanged 一个都不会触发——列宽就永远停在构造期的样子
+        /// （配置真相表、钩子嫌疑「仍然不能完整显示」就是这个原因）。
+        /// 所以 MainForm 每次切页后都调一次这个，强制按当前内容重算。
+        /// </summary>
+        public static void RefitAll()
+        {
+            try
+            {
+                List<EventHandler> fits = new List<EventHandler>();
+                foreach (KeyValuePair<ListView, EventHandler> kv in Fitters)
+                {
+                    if (kv.Key != null && !kv.Key.IsDisposed && kv.Value != null) fits.Add(kv.Value);
+                }
+                foreach (EventHandler fit in fits)
+                {
+                    try { fit(null, null); }
+                    catch (Exception) { }
+                }
+            }
+            catch (Exception) { }
         }
 
         /// <summary>ListView/ListBox 双缓冲：几千行滚动刷新不再闪烁（反射打开受保护属性）。</summary>
@@ -519,6 +603,10 @@ namespace HotkeyHound.Ui
                 {
                     // 卡片自己画 Surface 底 + 圆角边框；BackColor 参与子控件的透明模拟，不许覆盖。
                     c.ForeColor = Text;
+                }
+                else if (c is GradientPanel)
+                {
+                    // 头图渐变自己画背景；不覆盖任何颜色，否则子 Label 会拿到白底。
                 }
                 else if (c is Form || c is UserControl || c is TabPage || c is SplitContainer || c is Panel)
                 {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Principal;
@@ -12,7 +12,7 @@ namespace HotkeyHound.Core
         public const string Title = "HotkeyHound";
         public const string Version = "3.0.0";
         /// <summary>版本代号（写进发布说明与状态栏，不参与比较）。</summary>
-        public const string Codename = "Tournament";
+        public const string Codename = "Gänseliesel";
 
         /// <summary>版本说明（随当前语言变化）。</summary>
         public static string VersionNote { get { return L10n.T("app.versionNote"); } }

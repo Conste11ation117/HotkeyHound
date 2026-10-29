@@ -24,6 +24,7 @@ namespace HotkeyHound.Ui
         private OverviewTab _overviewTab;
         private TruthTab _truthTab;
         private ReportTab _reportTab;
+        private AboutTab _aboutTab;
         private AttributionTab _attributionTab;
         private HookCheckTab _hookCheckTab;
         private KeyMonitorTab _keyMonitorTab;
@@ -38,7 +39,7 @@ namespace HotkeyHound.Ui
         public event Action SnapshotChanged;
 
         /// <summary>
-        /// 文档截图模式：跑一次扫描，把七个页面逐页渲染成 PNG，然后退出。
+        /// 文档截图模式：跑一次扫描，把八个页面逐页渲染成 PNG，然后退出。
         /// 用 DrawToBitmap 渲染，不需要窗口在前台，也**不安装任何钩子**。
         /// </summary>
         public MainForm(string screenshotDir)
@@ -112,7 +113,7 @@ namespace HotkeyHound.Ui
             string[] names = new string[]
             {
                 "01-overview", "02-attribution", "03-hookcheck", "04-keymonitor",
-                "05-truth", "06-hooksuspects", "07-report"
+                "05-truth", "06-hooksuspects", "07-report", "08-about"
             };
             for (int i = 0; i < _pages.Count && i < names.Length; i++)
             {
@@ -237,17 +238,18 @@ namespace HotkeyHound.Ui
             _keyMonitorTab = new KeyMonitorTab(this);
             _hookSuspectsTab = new HookSuspectsTab(this);
             _reportTab = new ReportTab(this);
+            _aboutTab = new AboutTab(this);
 
             string[] titles = new string[]
             {
                 L10n.T("ui.tab.overview"), L10n.T("ui.tab.attribution"), L10n.T("ui.tab.hookcheck"),
                 L10n.T("ui.tab.keymonitor"), L10n.T("ui.nav.truth"), L10n.T("ui.tab.hooksuspects"),
-                L10n.T("ui.tab.report")
+                L10n.T("ui.tab.report"), L10n.T("ui.tab.about")
             };
             Control[] contents = new Control[]
             {
                 _overviewTab, _attributionTab, _hookCheckTab, _keyMonitorTab,
-                _truthTab, _hookSuspectsTab, _reportTab
+                _truthTab, _hookSuspectsTab, _reportTab, _aboutTab
             };
             for (int i = 0; i < contents.Length; i++) AddPage(contents[i]);
 
@@ -382,6 +384,10 @@ namespace HotkeyHound.Ui
                 if (i < _navButtons.Count) StyleNavButton(_navButtons[i], i == index);
             }
             try { _content.Controls.SetChildIndex(_pages[index], 0); }
+            catch (Exception) { }
+            // 刚显示出来的页面里，隐藏期间建好的 ListView 从没按真实尺寸算过列宽；
+            // 等布局落定后统一重算一次，否则「横向滚动」永远不会出现。
+            try { BeginInvoke(new MethodInvoker(delegate { UiTheme.RefitAll(); })); }
             catch (Exception) { }
         }
 

@@ -6,19 +6,17 @@ using HotkeyHound.Core;
 
 namespace HotkeyHound.Ui
 {
+    /// <summary>
+    /// 报告页：只负责「生成 / 打开 HTML 报告」。版本信息、作者、语言与主题设置
+    /// 在 3.0.0 拆到了单独的「关于」页——报告是动作，关于是阅读，不该挤在同一屏。
+    /// </summary>
     public sealed class ReportTab : UserControl
     {
         private readonly MainForm _host;
         private readonly TextBox _pathBox;
         private readonly Button _openButton;
         private readonly Button _generateButton;
-        private readonly Label _releaseNote;
-        private readonly Label _limits;
         private readonly Label _reportInfo;
-        private readonly ComboBox _langBox;
-        private readonly ComboBox _themeBox;
-        private bool _langInitializing = true;
-        private bool _themeInitializing = true;
 
         public ReportTab(MainForm host)
         {
@@ -82,6 +80,7 @@ namespace HotkeyHound.Ui
             _generateButton.Text = L10n.T("ui.rt.generate");
             _generateButton.Size = new Size(110, 28);
             _generateButton.Margin = new Padding(0, 4, 0, 4);
+            UiTheme.MarkPrimary(_generateButton);
             _generateButton.Click += delegate (object s, EventArgs e) { Generate(); };
 
             pathRow.Controls.Add(pathLabel, 0, 0);
@@ -91,104 +90,12 @@ namespace HotkeyHound.Ui
 
             _reportInfo = UiTheme.StackLabel(L10n.T("ui.rt.notGenerated"), UiTheme.Muted);
 
-            // 语言切换：放在「报告与关于」页。切换后提示需要重启（界面文本在启动时已构建）。
-            var langRow = UiTheme.NewFlowRow();
-            var langLabel = new Label();
-            langLabel.Text = L10n.T("ui.rt.langLabel");
-            langLabel.AutoSize = true;
-            langLabel.Anchor = AnchorStyles.Left;
-            langLabel.Margin = new Padding(0, 2, 8, 2);
-            _langBox = new ComboBox();
-            _langBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            _langBox.Width = 200;
-            _langBox.Margin = new Padding(0, 2, 8, 2);
-            _langBox.Items.Add(L10n.LangDisplay(L10n.Chinese));
-            _langBox.Items.Add(L10n.LangDisplay(L10n.English));
-            _langBox.SelectedIndex = L10n.Current == L10n.Chinese ? 0 : 1;
-            _langBox.SelectedIndexChanged += OnLanguageChanged;
-            langRow.Controls.Add(langLabel);
-            langRow.Controls.Add(_langBox);
-
-            // 主题切换：与语言一样写进同一个 settings.ini；WinForms 原生控件换肤不可靠，提示重启。
-            var themeRow = UiTheme.NewFlowRow();
-            var themeLabel = new Label();
-            themeLabel.Text = L10n.T("ui.rt.themeLabel");
-            themeLabel.AutoSize = true;
-            themeLabel.Anchor = AnchorStyles.Left;
-            themeLabel.Margin = new Padding(0, 2, 8, 2);
-            _themeBox = new ComboBox();
-            _themeBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            _themeBox.Width = 200;
-            _themeBox.Margin = new Padding(0, 2, 8, 2);
-            _themeBox.Items.Add(L10n.T("ui.rt.themeSystem"));
-            _themeBox.Items.Add(L10n.T("ui.rt.themeLight"));
-            _themeBox.Items.Add(L10n.T("ui.rt.themeDark"));
-            _themeBox.SelectedIndex = ThemeIndexOf(UiTheme.Mode);
-            _themeBox.SelectedIndexChanged += OnThemeChanged;
-            themeRow.Controls.Add(themeLabel);
-            themeRow.Controls.Add(_themeBox);
-
-            // 作者署名：最后一页固定展示，跟着版本走（不写进可执行文件的字符串表外部）。
-            var authorRow = UiTheme.NewFlowRow();
-            var authorLabel = UiTheme.StackLabel(L10n.T("ui.rt.author"), UiTheme.Muted);
-            authorLabel.AutoSize = true;
-            authorLabel.Dock = DockStyle.Top;
-            authorRow.Controls.Add(authorLabel);
-
-            _releaseNote = UiTheme.StackLabel(
-                L10n.F("ui.rt.release", AppInfo.Title, AppInfo.Version, AppInfo.VersionNote, AppInfo.Framework,
-                       AppInfo.MachineName, AppInfo.UserName,
-                       AppInfo.IsAdministrator() ? L10n.T("common.yes") : L10n.T("common.no")),
-                UiTheme.Text);
-            _releaseNote.Margin = new Padding(0, 10, 0, 4);
-
-            _limits = UiTheme.StackLabel(L10n.T("ui.rt.limits"), UiTheme.Muted);
-
             UiTheme.StackAdd(stack, heading);
             UiTheme.StackAdd(stack, pathRow);
             UiTheme.StackAdd(stack, _reportInfo);
-            UiTheme.StackAdd(stack, langRow);
-            UiTheme.StackAdd(stack, themeRow);
-            UiTheme.StackAdd(stack, authorRow);
-            UiTheme.StackAdd(stack, _releaseNote);
-            UiTheme.StackAdd(stack, _limits);
 
             body.Controls.Add(stack);
             Controls.Add(body);
-
-            _langInitializing = false;
-            _themeInitializing = false;
-        }
-
-        private void OnLanguageChanged(object sender, EventArgs e)
-        {
-            if (_langInitializing) return;
-            string target = _langBox.SelectedIndex == 0 ? L10n.Chinese : L10n.English;
-            if (target == L10n.Current) return;
-            L10n.SetLanguage(target);
-            MessageBox.Show(this, L10n.F("ui.rt.langRestart", L10n.LangDisplay(target)), AppInfo.Title,
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
-
-        private static int ThemeIndexOf(ThemeMode mode)
-        {
-            switch (mode)
-            {
-                case ThemeMode.Light: return 1;
-                case ThemeMode.Dark: return 2;
-                default: return 0;
-            }
-        }
-
-        private void OnThemeChanged(object sender, EventArgs e)
-        {
-            if (_themeInitializing) return;
-            ThemeMode mode = _themeBox.SelectedIndex == 1 ? ThemeMode.Light
-                            : (_themeBox.SelectedIndex == 2 ? ThemeMode.Dark : ThemeMode.System);
-            if (mode == UiTheme.Mode) return;
-            UiTheme.SetMode(mode);
-            MessageBox.Show(this, L10n.F("ui.rt.themeRestart", UiTheme.ModeName(mode)), AppInfo.Title,
-                            MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private void Generate()

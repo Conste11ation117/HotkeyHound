@@ -410,8 +410,8 @@ namespace HotkeyHound.Core
               "  HotkeyHound.exe --theme system|light|dark     Force the theme for this run (not persisted; for dark screenshots)");
             A("cli.help.helper", "  HotkeyHound.exe --helper                       （内部用）辅助进程",
               "  HotkeyHound.exe --helper                       (internal) helper process");
-            A("cli.help.screenshot", "  HotkeyHound.exe --screenshot <目录>            （文档用）渲染七个页面为 PNG 后退出，不装钩子",
-              "  HotkeyHound.exe --screenshot <dir>             (docs) render the seven pages to PNG, then exit; installs no hooks");
+            A("cli.help.screenshot", "  HotkeyHound.exe --screenshot <目录>            （文档用）渲染八个页面为 PNG 后退出，不装钩子",
+              "  HotkeyHound.exe --screenshot <dir>             (docs) render the eight pages to PNG, then exit; installs no hooks");
             A("cli.help.help", "  HotkeyHound.exe --help                         显示本帮助",
               "  HotkeyHound.exe --help                         Show this help");
             A("cli.help.notesTitle", "说明：", "Notes:");
@@ -755,10 +755,11 @@ namespace HotkeyHound.Core
               + "any process. If this report came from <code>--scan</code>, an empty section is expected.");
             A("rep.hookcheck.hint",
               "判定依赖本程序安装的 <code>WH_KEYBOARD_LL</code> 低层键盘钩子；它只观察按键，不吞键、不改键。"
-              + "四个分支：被上层钩子吞掉 / 疑似被钩子截胡 / 正常送达 / 不是全局热键。",
+              + "结论：被上层钩子吞掉 / 疑似被钩子截胡 / 正常送达 / 不是全局热键；前提不足（引擎 B 未监听、未扫描、时间窗内没按）时给「无法判定」。",
               "The verdict relies on this program's <code>WH_KEYBOARD_LL</code> low-level keyboard hook; "
-              + "it only observes keys, never swallows or alters them. Four branches: swallowed upstream / "
-              + "likely intercepted / delivered normally / not a global hotkey.");
+              + "it only observes keys, never swallows or alters them. Verdicts: swallowed upstream / "
+              + "likely intercepted / delivered normally / not a global hotkey; when a prerequisite is missing "
+              + "(engine B not listening, no scan, or the key was not pressed in the window) it reports Inconclusive.");
             A("rep.hookcheck.compareH3", "对照排除记录", "Comparison records");
             A("rep.hookcheck.compareHint",
               "这些快照是用户在界面上点「记录本次对照」时留下的结论与候选进程，用于「退出可疑软件前后」逐条对比。"
@@ -911,7 +912,32 @@ namespace HotkeyHound.Core
             A("ui.tab.hookcheck", "钩子检测", "Hook detection");
             A("ui.tab.truth", "配置真相表", "Config truth table");
             A("ui.nav.truth", "配置真相表", "Truth table");
-            A("ui.tab.report", "报告与关于", "Report & about");
+            A("ui.tab.report", "报告", "Report");
+            A("ui.tab.about", "关于", "About");
+            A("ui.ab.heading", "关于 HotkeyHound", "About HotkeyHound");
+            A("ui.ab.license", "许可证：MIT © 2026 Conste11ation117　·　免安装、无网络、无遥测。",
+              "License: MIT (c) 2026 Conste11ation117 - no installer, no network, no telemetry.");
+            A("ui.ab.hint", "完整帮助：按 F1 或点右上角「帮助」按钮。",
+              "Full help: press F1 or click the Help button at the top right.");
+            A("ui.ab.intro",
+              "这是一个 Windows 全局快捷键冲突排查器。它回答三个 Windows 自己不肯回答的问题："
+              + "哪些组合键已经被占用、是被谁占用的、以及你按下去为什么毫无反应。",
+              "A global hotkey conflict troubleshooter for Windows. It answers three questions Windows "
+              + "itself won't: which combinations are already taken, who took them, and why a key press "
+              + "does nothing at all.");
+            A("ui.ab.f1", "四个引擎：A 占用扫描、B 按键归属、C 钩子窃取检测、D 配置聚合。",
+              "Four engines: A occupancy scan, B press attribution, C hook-swallow detection, D config aggregation.");
+            A("ui.ab.f2", "A 和 D 只读，不需要管理员，也从不写任何配置或注册表。",
+              "A and D are read-only, need no administrator, and never write any config or registry.");
+            A("ui.ab.f3", "B 和 C 会安装键盘钩子，但只在你点「开始监听」/「布防」/「开始监视」之后；钩子只观察，绝不吞键、不改键。",
+              "B and C install keyboard hooks only after you click Start listening / Arm / Start monitoring; the hooks observe and never swallow or alter keys.");
+            A("ui.ab.f4", "x64 与 32 位进程的归属都已覆盖，已在真机验证；提权进程需以管理员身份运行才看得到。",
+              "Attribution covers both x64 and 32-bit processes, verified on real machines; elevated processes need running as administrator.");
+            A("ui.ab.f5", "全程无网络、无遥测、不上传任何东西。",
+              "No network, no telemetry, nothing is ever uploaded.");
+            A("ui.ab.env", "运行框架：{0}　·　机器：{1}　·　用户：{2}　·　管理员：{3}",
+              "Runtime: {0}  ·  Machine: {1}  ·  User: {2}  ·  Administrator: {3}");
+            A("ui.ab.settings", "语言与主题", "Language & theme");
             A("ui.help.button", "帮助", "Help");
             A("ui.crash.body",
               "程序遇到未处理的错误。\r\n\r\n{0}\r\n\r\n完整日志已写入：\r\n{1}\r\n\r\n"
@@ -1126,7 +1152,7 @@ namespace HotkeyHound.Core
             A("ui.hk.compare.failed", "记录对照失败：{0}", "Failed to record comparison: {0}");
 
             // Report & about
-            A("ui.rt.heading", "报告与关于", "Report & about");
+            A("ui.rt.heading", "报告", "Report");
             A("ui.rt.author", "作者：Conste11ation117　·　github.com/Conste11ation117",
               "Author: Conste11ation117  -  github.com/Conste11ation117");
             A("ui.rt.pathLabel", "报告路径：", "Report path: ");

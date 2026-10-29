@@ -507,9 +507,9 @@ namespace HotkeyHound.Ui
                 _events.Items.Add(item);
                 if (_events.Items.Count > 1200) _events.Items.RemoveAt(0);
                 item.EnsureVisible();
+                UiTheme.TrackRow(_events, item);
             }
             catch (Exception) { }
-            UiTheme.RefitColumns(_events);
         }
 
         private void AppendVerdict(KeyMonitorVerdictRecord record)
@@ -653,7 +653,11 @@ namespace HotkeyHound.Ui
                         _remap.Visible = true;
                     }
                 }
-                finally { _remap.EndUpdate(); }
+                finally
+                {
+                    _remap.EndUpdate();
+                    UiTheme.RefitColumns(_remap);
+                }
             }
             catch (Exception) { }
 

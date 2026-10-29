@@ -184,10 +184,10 @@ namespace HotkeyHound.Ui
                 if (record.IsElevated) item.ForeColor = UiTheme.Warning;
                 _list.Items.Add(item);
                 item.EnsureVisible();
+                UiTheme.TrackRow(_list, item);
                 _statusLabel.Text = L10n.F("ui.at.captured", _list.Items.Count);
             }
             catch (Exception) { }
-            UiTheme.RefitColumns(_list);
         }
 
         private void OnToggleClick(object sender, EventArgs e)
@@ -352,11 +352,11 @@ namespace HotkeyHound.Ui
                 }
                 _autoList.Items.Add(item);
                 item.EnsureVisible();
+                UiTheme.TrackRow(_autoList, item);
                 _autoStatus.Text = L10n.F("ui.at.autoProgress", _autoList.Items.Count, _autoPlanned,
                     record.Combo == null ? "" : record.Combo.Display());
             }
             catch (Exception) { }
-            UiTheme.RefitColumns(_autoList);
         }
 
         private static string AutoProbeOutcomeName(AutoProbeOutcome outcome)

@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and versioning adheres to [Semantic Versioning](https://semver.org/).
 
-## [3.0.0] — 2026-10-29 “Tournament”
+## [3.0.0] — 2026-10-29 “Gänseliesel”
 
 Cuts a new major line after the 2.0.0 interface rewrite. Everything below is a fix for problems hit
 in daily use — one undiagnosable crash dialog, one unreachable stop button, one empty read-only box,
@@ -18,7 +18,7 @@ and tables that cut their own text — plus the author line on the about page.
   "实测…".
 - The last column additionally fills any remaining width, so short tables leave no blank strip on the
   right.
-- A single column is capped at 1200 px so one very long path cannot stretch the table off the screen;
+- A single column is capped at 4000 px so one very long path cannot stretch the table off the screen;
   measurements are cached per row count, so resizing stays responsive.
 
 ### Fixed: "Parameter count mismatch" dialog when installing a hook
@@ -43,10 +43,24 @@ and tables that cut their own text — plus the author line on the about page.
   hidden in that case and replaced by a single explanatory line; both read-only boxes get a 96 px
   minimum height.
 
-### Added: author line on the last page
+### Added: author line on the About page
 
-- The Report & about page shows the author: `Conste11ation117 · github.com/Conste11ation117`.
+- The About page shows the author: `Conste11ation117 · github.com/Conste11ation117`.
 
+### Fixed: the truth table and hook suspects never widened on their own
+
+- Both pages are rebuilt while they are still hidden, so the width fit ran before the list had a
+  handle and silently gave up; by the time the page was shown, the ListView's managed item list had
+  been desynchronised from the native one and indexing it returned null, so every column stayed at
+  header width and no horizontal scrollbar ever appeared. Measurement now happens at rebuild time,
+  before the handle check; only applying the widths waits for layout.
+
+### New: the About page, split from the report
+
+- "Report & about" became two pages. **Report** keeps the path box plus open/generate; **About**
+  carries the version, author, language/theme settings, licence and known limits under a blue-to-purple
+  hero gradient sampled from the program icon, with a 26 pt wordmark. The prose is one sentence per
+  line instead of a 400-word paragraph.
 ## [2.1.1] — 2026-10-29 “Hurricane”
 
 ### Fixed: an empty "Scancode Map remaps" box that looked broken
